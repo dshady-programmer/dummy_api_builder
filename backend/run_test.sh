@@ -1,2 +1,2 @@
 #!/bin/bash
-APP_ENVIRON="test" python3 -m unittest discover tests
+APP_ENVIRON="test" python -m unittest discover tests

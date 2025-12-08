@@ -18,54 +18,90 @@ const AppProvider = ({ children }) => {
     const fetchApiDetail = async (apiId) => {
         const token = Cookies.get('token', { path: '/' })
         setLoading(true)
-        const response = await fetch(`${hostUrl}/api/v1/my_api/${apiId}`, {
+        try {
+            const response = await fetch(`${hostUrl}/api/v1/my_api/${apiId}`, {
             headers: {
-                'x-access-token': token
-            }
-        });
-        const data = await response.json();
-        if (response.status === 200) {
+                    'x-access-token': token
+                }
+            });
+            const data = await response.json();
+            if (response.status === 200) {
 
-            setApiDetail(data)
+                setApiDetail(data)
+            } else {
+                setApiDetail(null)
+            }
+        } catch (err) {
+            console.log("error fetching api detail", err)
+            setApiDetail(null)
+        } finally {
+            setLoading(false)
         }
-        setLoading(false)
 
     }
     const fetchApis = async () => {
         const token = Cookies.get('token', { path: '/' })
         setApiLoading(true)
-        const response = await fetch(`${hostUrl}/api/v1/my_apis`, {
-            headers: {
-                'x-access-token': token
-            }
-        });
-        const data = await response.json();
-        if (response.status === 200) setApis(data)
-        setApiLoading(false)
+        try {
+
+            const response = await fetch(`${hostUrl}/api/v1/my_apis`, {
+                headers: {
+                    'x-access-token': token
+                }
+            });
+            const data = await response.json();
+            if (response.status === 200) setApis(data)
+            else setApis(null)
+        } catch (err) {
+            console.log("error fetchin apis", err)
+            setApis(null)
+        } finally {
+
+            setApiLoading(false)
+        } 
+        
     }
     const fetchUser = async () => {
         const token = Cookies.get('token', { path: '/' })
         setUserLoading(true)
-        const response = await fetch(`${hostUrl}/api/v1/me`, {
-            headers: {
-                'x-access-token': token
-            }
-        });
-        const data = await response.json();
-        if (response.status === 200) setUser(data)
-        setUserLoading(false)
+        try {
+
+            const response = await fetch(`${hostUrl}/api/v1/me`, {
+                headers: {
+                    'x-access-token': token
+                }
+            });
+            const data = await response.json();
+            if (response.status === 200) setUser(data)
+            else setUser(null)
+        } catch (err) {
+            console.log('error fetching user', err)
+            setUser(null)
+        } finally {
+
+            setUserLoading(false) 
+        }
     }
     const fetchModel = async (apiId, modelName) => {
         const token = Cookies.get('token', { path: '/' })
         setLoading(true)
-        const response = await fetch(`${hostUrl}/api/v1/my_api/${apiId}/show_model/${modelName}`, {
-            headers: {
-                'x-access-token': token
-            }
-        });
-        const data = await response.json();
-        if (response.status === 200) setModel(data)
-        setLoading(false)
+        try {
+            
+            const response = await fetch(`${hostUrl}/api/v1/my_api/${apiId}/show_model/${modelName}`, {
+                headers: {
+                    'x-access-token': token
+                }
+            });
+            const data = await response.json();
+            if (response.status === 200) setModel(data)
+            else setModel(null)
+        } catch (err) {
+            console.log('error fetching model', err)
+            setModel(null)
+        } finally {
+            
+            setLoading(false)
+        }
     }
     return (<AppContext.Provider value={{
         user, fetchUser, apis, fetchApis, model, fetchModel,

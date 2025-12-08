@@ -14,8 +14,8 @@ import enum
 
 
 parameter_constraints = db.Table('parameter_constraint',
-                                 db.Column('tableparameter_id', db.Integer, db.ForeignKey('tableparameter.id')),
-                                 db.Column('constraint_id', db.Integer, db.ForeignKey('constraint.id'))
+                                 db.Column('tableparameter_id', db.Integer, db.ForeignKey('tableparameter.id', name='fk_parameter_constraint_tableparameter_id', ondelete='CASCADE')),
+                                 db.Column('constraint_id', db.Integer, db.ForeignKey('constraint.id', name='fk_parameter_constraint_constraint_id', ondelete='CASCADE'))
                                  )
     
 
@@ -39,7 +39,7 @@ class TableParameter(db.Model):
     dataType_length = db.Column(db.Integer, nullable=True) # Only valid for strings, text, integers
     table_id = db.Column(db.Integer, db.ForeignKey('table.id'))
     table = db.relationship('Table', back_populates='table_parameters')
-    constraints = db.relationship('Constraint', secondary=parameter_constraints, backref='table_parameters', cascade="all, delete")
+    constraints = db.relationship('Constraint', secondary=parameter_constraints, backref='table_parameters', cascade="all, delete", passive_deletes=True)
     entries = db.relationship('Entry', back_populates='tableparameter', cascade="all, delete")
 
 

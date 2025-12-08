@@ -127,6 +127,7 @@ ENV/
 env.bak/
 venv.bak/
 .dummy_api_env/
+.api-env/
 
 # Spyder project settings
 .spyderproject

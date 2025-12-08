@@ -100,7 +100,7 @@ def delete_api(user, id):
     api = Api.query.filter_by(id=id, user_id=user.id)
     if not api.first():
         return jsonify({"error": "api doesn't exist"}), 400
-    Table.query.filter_by(api_id=api.first().id).delete()
+    # Table.query.filter_by(api_id=api.first().id).delete()
     api.delete()
     db.session.commit()
     return jsonify(''), 204

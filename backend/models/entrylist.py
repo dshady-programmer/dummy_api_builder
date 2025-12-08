@@ -1,5 +1,6 @@
 """
 Defining the model for entry lists
+think of entry list as the entire row and entry as each column in a row.
 e.g
 name: peter
 age: 15

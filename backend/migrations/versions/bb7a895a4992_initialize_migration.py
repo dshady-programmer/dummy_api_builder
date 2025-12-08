@@ -1,8 +1,8 @@
-"""initial migrations
+"""initialize migration
 
-Revision ID: 221e719b7853
+Revision ID: bb7a895a4992
 Revises: 
-Create Date: 2024-01-13 11:36:48.894582
+Create Date: 2025-12-08 08:59:59.342241
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = '221e719b7853'
+revision = 'bb7a895a4992'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -89,14 +89,14 @@ def upgrade():
     op.create_table('entrylist_relationships',
     sa.Column('relationship_id', sa.Integer(), nullable=True),
     sa.Column('entrylist_id', sa.Integer(), nullable=True),
-    sa.ForeignKeyConstraint(['entrylist_id'], ['entrylist.id'], ),
-    sa.ForeignKeyConstraint(['relationship_id'], ['relationship.id'], )
+    sa.ForeignKeyConstraint(['entrylist_id'], ['entrylist.id'], name='fk_entrylist_relationships_entrylist_id', ondelete='CASCADE'),
+    sa.ForeignKeyConstraint(['relationship_id'], ['relationship.id'], name='fk_entrylist_relationships_relationship_id', ondelete='CASCADE')
     )
     op.create_table('parameter_constraint',
     sa.Column('tableparameter_id', sa.Integer(), nullable=True),
     sa.Column('constraint_id', sa.Integer(), nullable=True),
-    sa.ForeignKeyConstraint(['constraint_id'], ['constraint.id'], ),
-    sa.ForeignKeyConstraint(['tableparameter_id'], ['tableparameter.id'], )
+    sa.ForeignKeyConstraint(['constraint_id'], ['constraint.id'], name='fk_parameter_constraint_constraint_id', ondelete='CASCADE'),
+    sa.ForeignKeyConstraint(['tableparameter_id'], ['tableparameter.id'], name='fk_parameter_constraint_tableparameter_id', ondelete='CASCADE')
     )
     # ### end Alembic commands ###
 

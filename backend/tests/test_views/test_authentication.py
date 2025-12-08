@@ -5,6 +5,23 @@ from tests import TestConfig
 from models.user import User
 from datetime import timedelta
 
+def dummy_jwt(secret=False):
+    import uuid
+    from datetime import datetime, timedelta, timezone
+    import jwt
+    from api.v1.app import app
+    token = jwt.encode(
+        {
+            "public_id": str(uuid.uuid4()),
+            "exp": datetime.now(timezone.utc) + timedelta(minutes=60),
+            "jti": str(uuid.uuid4())
+        },
+        "test_secret" if secret else app.config["SECRET_KEY"],
+        algorithm="HS256",
+    )
+    return token
+
+
 class TestSignUp(TestConfig):
     """
     Testing the api/v1/signup endpoint
@@ -225,8 +242,9 @@ class TestLogin(TestConfig):
 
 
             for session in [session1, session2]:
-                self.assertEqual(session1.status_code, 200)
-                self.assertTrue(session2.json["token"])
+                self.assertEqual(session.status_code, 200)
+                self.assertTrue(session.json["token"])
+
             
             # Confirm tokens are different
             self.assertNotEqual(session2.json["token"], session1.json["token"])
@@ -258,8 +276,8 @@ class TestLogin(TestConfig):
             p_id2 = u2.public_id
 
             for session in [session1, session2]:
-                self.assertEqual(session1.status_code, 200)
-                self.assertTrue(session2.json["token"])
+                self.assertEqual(session.status_code, 200)
+                self.assertTrue(session.json["token"])
             # confirm tokens are different
             self.assertNotEqual(session2.json["token"], session1.json["token"])
             
@@ -314,7 +332,7 @@ class TestLoginRequiredAndUserDetails(TestConfig):
         Test user detail endpoint with a token, but invalid token!!!
         """
         expected_err_msg = "Token is invalid !!"
-        res = self.client.get(self.endpoint, headers={'x-access-token': 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.kOTEyYjM2Zi0wN2FiLTQxNTktOTM4MC1lNjM5OGQwMDdjOWEiLCJleHAiOjE3MDc5OTk2NjB9.vfEn1LM86K8PLJ3VgDLhQW6xzbXfFOczFYruCNMTLwA'})
+        res = self.client.get(self.endpoint, headers={'x-access-token': dummy_jwt(True)})
         self.assertEqual(res.status_code, 401)
         self.assertEqual(res.json["error"], expected_err_msg)
     
@@ -323,8 +341,9 @@ class TestLoginRequiredAndUserDetails(TestConfig):
         Test user detail endpoint with a token that is valid jwt but wrong
         """
         expected_err_msg = "invalid credentials, please log in or create an account"
-        res = self.client.get(self.endpoint, headers={'x-access-token': 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJwdWJsaWNfaWQiOiI1MDQ2M2MzNy03NjNiLTQzZTAtOThlMy1jNDFmN2ZiZTBlODAiLCJleHAiOjE3MDgwOTIzNjJ9.8nc6Xo3UEZL_9sucvf77qtwhFSvLemEuBheaNpNM2ak'})
+        res = self.client.get(self.endpoint, headers={'x-access-token': dummy_jwt()})
         self.assertEqual(res.status_code, 401)
+        print("user detail with wrong token", res.json['error'])
         self.assertEqual(res.json["error"], expected_err_msg)
 
     
@@ -389,16 +408,17 @@ class TestLogoutView(TestConfig):
         Test logout endpoint with a token, but invalid token!!!
         """
         expected_err_msg = "Token is invalid !!"
-        res = self.client.post(self.endpoint, headers={'x-access-token': 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.kOTEyYjM2Zi0wN2FiLTQxNTktOTM4MC1lNjM5OGQwMDdjOWEiLCJleHAiOjE3MDc5OTk2NjB9.vfEn1LM86K8PLJ3VgDLhQW6xzbXfFOczFYruCNMTLwA'})
+        res = self.client.post(self.endpoint, headers={'x-access-token': dummy_jwt(True)})
         self.assertEqual(res.status_code, 401)
         self.assertEqual(res.json["error"], expected_err_msg)
     
     def test_logout_endpoint_with_wrong_token(self):
         """
-        Test logout endpoint with a token that is valid jwt but wrong
+        Test logout endpoint with a token that is valid jwt but wrong i.e no user associated
         """
         expected_err_msg = "invalid credentials, please log in or create an account"
-        res = self.client.post(self.endpoint, headers={'x-access-token': 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJwdWJsaWNfaWQiOiI1MDQ2M2MzNy03NjNiLTQzZTAtOThlMy1jNDFmN2ZiZTBlODAiLCJleHAiOjE3MDgwOTIzNjJ9.8nc6Xo3UEZL_9sucvf77qtwhFSvLemEuBheaNpNM2ak'})
+
+        res = self.client.post(self.endpoint, headers={'x-access-token': dummy_jwt()})
         self.assertEqual(res.status_code, 401)
         self.assertEqual(res.json["error"], expected_err_msg)
     

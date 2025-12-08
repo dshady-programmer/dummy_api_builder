@@ -29,6 +29,10 @@ const Index = () => {
             setStatus({ type: "error", message: "Passwords must match" });
             return;
         }
+        if (credentials.password.length < 8) {
+            setStatus({type: "error", message: "Password must be atleast 8 characters"})
+            return
+        }
         setLoading(true)
         try {
             const req = await fetch(`${hostUrl}/api/v1/signup`, {

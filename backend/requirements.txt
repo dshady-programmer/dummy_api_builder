@@ -1,5 +1,5 @@
 Flask-RESTful==0.3.8
-PyJWT==1.7.1
+PyJWT==2.10.1
 Flask-SQLAlchemy==3.0.3
 python-dotenv
 python-dateutil

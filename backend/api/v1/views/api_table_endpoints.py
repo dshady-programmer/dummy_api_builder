@@ -55,6 +55,9 @@ def create_model(user, api_id):
         param_dt = param.get("datatype")
         param_dt_length = param.get("dt_length")
         constraints = param.get("constraints") or []
+        if type(constraints) != list:
+            return jsonify({"error": "Invalid constraints type"}), 400
+        constraints = set(constraints) # incase of duplicate values.
         try:
             if TableParameter.query.filter_by(name=param_name, table_id=new_table.id).first():
                 # First check if the table param of such name already exist on the table
@@ -74,7 +77,7 @@ def create_model(user, api_id):
                 Table.query.filter_by(name=name, api_id=api_id).delete()
                 # Rolling back manually if there's an error
                 db.session.commit()
-                return jsonify({"error": "name of table parameter already exist for this table, it must be unique"}), 400
+                return jsonify({"error": f"Duplicate name '{name}' of table parameter, it must be unique"}), 400
             if not validate_dtType(param_dt):
                 # validate the data type
                 # Technically this check won't be triggered if the api is used from the frontend
@@ -221,7 +224,9 @@ def update_model(user, api_id, model_name):
         param_dt = param.get("datatype")
         param_dt_length = param.get("dt_length")
         constraints = param.get("constraints") or []
-
+        if type(constraints) != list:
+            return jsonify({"error": "Invalid constraints type"}), 400
+        constraints = set(constraints) # incase of duplicate values.
 
         if not param_name:
             continue

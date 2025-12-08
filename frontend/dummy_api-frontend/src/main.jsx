@@ -20,6 +20,7 @@ import {
   RouterProvider,
 } from "react-router-dom";
 import ErrorPage from './error-page.jsx'
+import RequireAuth from './components/RequireAuth.jsx'
 
 const router = createBrowserRouter([
   {
@@ -38,7 +39,7 @@ const router = createBrowserRouter([
   },
   {
     path: '/my_apis',
-    element: <MyApi />,
+    element: <RequireAuth><MyApi /></RequireAuth>,
     children: [
       {
         path: "",
