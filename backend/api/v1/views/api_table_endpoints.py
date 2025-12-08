@@ -11,7 +11,7 @@ from models.api import Api
 from models.table import Table
 from models.tableparameter import TableParameter
 from models.constraints import Constraint
-from .views_utils import validate_dtType, validate_constraint, validate_name
+from .utils.validate import validate_dtType, validate_constraint, validate_name
 
 """
 We won't be implementing a table/model list endpoint
@@ -344,10 +344,12 @@ def delete_model(user, api_id, model_name):
     if not api:
         return jsonify({"error": "no api of such is associated to the user"}),400
     t = Table.query.filter_by(name=model_name, api_id=api_id).first().id
-    tbl_p = TableParameter.query.filter_by(table_id=t).first()
-    if tbl_p:
-        tbl_p.constraints.clear()
+    # tbl_p = TableParameter.query.filter_by(table_id=t).first()
+    # print(tbl_p)
+    # if tbl_p:
+    #     tbl_p.constraints.clear()
     TableParameter.query.filter_by(table_id=t).delete()
+ 
     Table.query.filter_by(name=model_name, api_id=api_id).delete()
     db.session.commit()
     

@@ -17,7 +17,7 @@ from models.constraints import Constraint
 from models.entry import Entry
 from models.entrylist import EntryList
 from models.relationship import Relationship
-from .views_utils import validate_entry_constraints, validate_entry_value_length, validate_entry_value
+from .utils.validate import validate_entry_constraints, validate_entry_value_length, validate_entry_value
 
 @app_views.route('<api_token>/my_api/<api_name>/model/<model_name>', methods=["GET", "POST"])
 def add_list_entry(api_token, api_name, model_name):

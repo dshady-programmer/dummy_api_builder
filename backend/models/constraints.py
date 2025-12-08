@@ -12,6 +12,7 @@ class ValidConstraints(enum.Enum):
     unique = 'unique'
     nullable = 'nullable'
     primary_key = 'primary_key'
+    default = 'default'
 
 class Constraint(db.Model):
     id = db.Column(db.Integer, primary_key=True)

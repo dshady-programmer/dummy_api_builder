@@ -9,8 +9,8 @@ from api.v1.auth.auth import login_required
 from models.api import Api
 from models.table import Table
 from models import db
-from .views_utils import validate_name
-
+from .utils.validate import validate_name
+from .utils.user_api_utils import update_api_fk_rel_tables_on_update, delete_api_fk_rel_tables_on_delete
 
 @app_views.route('/my_apis')
 @login_required
@@ -83,10 +83,12 @@ def update_api_info(user, id):
     api = Api.query.filter_by(id=id, user_id=user.id).first()
     if not api:
         return jsonify({"error": f"api with id {id} doesn't exist"}), 400
-    if api.tables:
-        # If api already has tables/models in them you can't update.
-        return jsonify({"error": "You cannot update an api with tables"}), 400
+
+# add a check to update all relationships
     if name and validate_name(name):
+        if api.name != name:
+            # run the check and update
+            update_api_fk_rel_tables_on_update(api.name, name)
         api.name = name
     if description:
         api.description = description
@@ -101,6 +103,8 @@ def delete_api(user, id):
     if not api.first():
         return jsonify({"error": "api doesn't exist"}), 400
     # Table.query.filter_by(api_id=api.first().id).delete()
+    name = api.first().name
+    delete_api_fk_rel_tables_on_delete(name)
     api.delete()
     db.session.commit()
     return jsonify(''), 204

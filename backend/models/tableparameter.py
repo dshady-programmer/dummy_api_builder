@@ -15,7 +15,8 @@ import enum
 
 parameter_constraints = db.Table('parameter_constraint',
                                  db.Column('tableparameter_id', db.Integer, db.ForeignKey('tableparameter.id', name='fk_parameter_constraint_tableparameter_id', ondelete='CASCADE')),
-                                 db.Column('constraint_id', db.Integer, db.ForeignKey('constraint.id', name='fk_parameter_constraint_constraint_id', ondelete='CASCADE'))
+                                 db.Column('constraint_id', db.Integer, db.ForeignKey('constraint.id', name='fk_parameter_constraint_constraint_id', ondelete='CASCADE')),
+                                 db.UniqueConstraint('tableparameter_id', 'constraint_id', name='uq_tableparameter_constraint')
                                  )
     
 
