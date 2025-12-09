@@ -9,7 +9,8 @@ def validate_constraint(constraint):
         "foreign_key",
         "unique",
         "nullable",
-        "primary_key"
+        "primary_key",
+        "default"
     ]
     if constraint not in valid_constraints:
         return False
