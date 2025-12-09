@@ -46,7 +46,7 @@ function Index() {
                 setStatus({ type: "error", message: data.error })
             else if (req.status === 200) {
                 setStatus({ type: "success", message: "Login Succesful" })
-                Cookies.set('token', data.token, { path: '/', expires: (1 / 24) })
+                Cookies.set('token', data.token, { path: '/', expires: (1) })
                 setTimeout(() => {
                     if (location.state?.path)
                         navigate(location.state.path)
@@ -55,6 +55,7 @@ function Index() {
                 }, 2000)
             }
         } catch (err) {
+            console.log(err)
             setStatus({ type: "error", message: "Sorry!, an error occured" })
         } finally {
             setLoading(false)

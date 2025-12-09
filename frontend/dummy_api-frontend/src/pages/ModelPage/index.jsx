@@ -91,8 +91,11 @@ const Index = () => {
                                 },
                             })
                             if (res.status === 204) {
-                                navigate(`/my_apis/${params.apiId}`)
+                                alert("Model deleted successfully")
                             }
+                            
+                            navigate(`/my_apis/${params.apiId}`)
+
                         }}>Delete Model</button>
                     </section>
                 </>

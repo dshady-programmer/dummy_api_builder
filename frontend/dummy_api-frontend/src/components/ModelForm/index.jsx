@@ -159,10 +159,10 @@ const Index = ({ fList, mParam, endpoint, title, btnTitle, method }) => {
                         <button type="button" onClick={() => {
                             let nextIndex = null
                             if (fieldList.length == 0)
-                                nextIndex = 1
+                                nextIndex = 1 // in the backend there's safe way to avoid any issue
                             else {
-                                const lastIndex = fieldList[fieldList.length - 1]
-                                nextIndex = lastIndex + 1
+                                const largestIndex = Math.max(...fieldList)
+                                nextIndex = largestIndex + 1
                             }
                             setFieldList((prev) => ([...prev, nextIndex]))
 

@@ -69,8 +69,9 @@ const Index = () => {
                                 })
                                 if (res.status === 204) {
                                     setInvalidate(true)
-                                    navigate('/my_apis')
-                                }
+                                } 
+                                navigate('/my_apis')
+                                
                             }}>
                                 Delete API
                             </button>
