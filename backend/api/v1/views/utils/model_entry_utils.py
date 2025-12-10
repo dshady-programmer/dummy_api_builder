@@ -3,12 +3,13 @@ from models import db, Entry, EntryList, Relationship
 from .validate import validate_entry_constraints, validate_entry_value, validate_entry_value_length
 from dateutil.parser import parse
 from .filtering_utils import query_filter
+from .parsers import parse_value
 
 def datetime_repr(entry_value, type):
     if type == "datetime":
-        return parse(entry_value)
+        return str(parse(entry_value))
     elif type == "date":
-        return parse(entry_value).date()
+        return str(parse(entry_value).date())
     return entry_value
 
 
@@ -222,11 +223,7 @@ def list_entries(args, table):
                 filter_in = True
                 for entry in get_entries:
                     tp_name = entry.tableparameter.name
-                    if entry.tableparameter.data_type.name == "integer":
-                        e_value = int(entry.value)
-                    else:
-                        e_value = entry.value
-
+                    e_value = parse_value(entry.tableparameter.data_type.name, entry.value)
                     found_valid_arg, filter_in = query_filter(tp_name, args, entry.tableparameter.data_type.name, entry.value)
                         
                     entry_data[tp_name] = e_value

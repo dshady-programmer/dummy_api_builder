@@ -114,3 +114,5 @@ def validate_entry_constraints(value, tbl_p, user=None):
         if Entry.query.filter_by(tableparameter_id=tbl_p.id, value=value).first():
             return False, "uniq", f"{value} already exists in the database. It must be unique"
     return True, fk, None
+
+
