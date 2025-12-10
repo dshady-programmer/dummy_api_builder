@@ -69,7 +69,7 @@ def create_table_parameter(param, table, tableparam_names, user):
                 raise Exception({"error": "Api name referenced in the foreign key doesn't exist"})
             r_table = Table.query.filter_by(name=f_table, api_id=r_api.id).first()
             if not r_table:
-                raise Exception({"error", "Table name referenced doesn't exist"})
+                raise Exception({"error": "Table name referenced doesn't exist"})
             p.foreign_key_reference_field = fk_rf
         if const == "primary_key":
             primary_key_present = True
@@ -173,6 +173,12 @@ def update_table_parameter(param, tableparam, tableparam_names, user):
     return primary_key_present
 
 
+def delete_table_parameter(table_params):
+    for _, table_param in table_params.items():
+        table_param.constraints.clear()
+        db.session.delete(table_param)
+        # update entrylists feature coming soon
+
 
 
 def parse_and_create_tableparameters(table_parameters, new_table, user):
@@ -187,6 +193,7 @@ def parse_and_create_tableparameters(table_parameters, new_table, user):
         if not primary_key_present:
             raise Exception({"error": "Table must contain atleast one primary key"})
     except Exception as e:
+        # print(e)
         error = e.args[0]
         db.session.rollback()
         if type(error) == dict and "error" in error:
@@ -211,20 +218,21 @@ def parse_and_update_tableparameters(table_parameters, table, user):
         existing_table_parameter_mapper[existing_tblp.id] = existing_tblp
     
     try:
-        print(existing_table_parameter_mapper)
         for param in table_parameters:
-            print(param)
 
             param_id = param.get("index")
-            print(param_id)
             if param_id in existing_table_parameter_mapper:
                 is_primary_key = update_table_parameter(param, existing_table_parameter_mapper[param_id], tableparam_names, user)
+                existing_table_parameter_mapper.pop(param_id)
             else:
                 is_primary_key = create_table_parameter(param, table, tableparam_names, user)
             if not primary_key_present:
                 primary_key_present = is_primary_key
         if not primary_key_present:
             raise Exception({"error": "Table must contain atleast one primary key"})
+        
+        delete_table_parameter(existing_table_parameter_mapper)
+        print("existing_table_parameter_value", existing_table_parameter_mapper)
     except Exception as e:
         error = e.args[0]
         db.session.rollback()

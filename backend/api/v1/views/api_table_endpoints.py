@@ -6,13 +6,12 @@ tables/model in an api
 from api.v1.views import app_views
 from flask import request, jsonify
 from api.v1.auth.auth import login_required
-from models import db
-from models.api import Api
-from models.table import Table
-from models.tableparameter import TableParameter
-from models.constraints import Constraint
-from .utils.validate import validate_dtType, validate_constraint, validate_name
+from models import db, Api, Table
+from .utils.validate import validate_name
 from .utils.model_utils import parse_and_create_tableparameters, parse_and_update_tableparameters
+from .utils.user_api_utils import delete_api_fk_rel_tables_on_delete, update_api_fk_rel_tables_on_update
+
+
 """
 We won't be implementing a table/model list endpoint
 as it would have been added with api_list
@@ -26,7 +25,6 @@ def create_model(user, api_id):
     name = data.get('name')
     description = data.get('description')
     table_parameters = data.get('tbl_params') or []
-
     # Atleast one table parameter is required
     # Tableparameter refers to the model fields (like name = string() etc..)
     # table_parameters would contain a list of dictionaries defining the attribute for the model
@@ -79,12 +77,16 @@ def update_model(user, api_id, model_name):
     if type(table_parameters) != list:
         return jsonify({"error": "table_parameter must be a list"}), 400
     if name and validate_name(name):
+        # update api_fk_relationship tables
+        old_ref_field = f"{api.name}.{get_table.name}"
+        new_ref_field = f"{api.name}.{name}"
+        update_api_fk_rel_tables_on_update(old_ref_field, new_ref_field)
         get_table.name = name
+
     if description:
         get_table.description = description
  
     response = parse_and_update_tableparameters(table_parameters, get_table, user)
-    print("response", response)
     if 'error' in response:
         return jsonify(response), 400
     return jsonify(response), 200
@@ -128,14 +130,15 @@ def delete_model(user, api_id, model_name):
     api = Api.query.filter_by(id=api_id, user_id=user.id).first()
     if not api:
         return jsonify({"error": "no api of such is associated to the user"}),400
-    t = Table.query.filter_by(name=model_name, api_id=api_id).first().id
-    # tbl_p = TableParameter.query.filter_by(table_id=t).first()
-    # print(tbl_p)
-    # if tbl_p:
-    #     tbl_p.constraints.clear()
-    TableParameter.query.filter_by(table_id=t).delete()
- 
-    Table.query.filter_by(name=model_name, api_id=api_id).delete()
+    t = Table.query.filter_by(name=model_name, api_id=api_id).first()
+    tbl_ps = t.table_parameters
+    for tp in tbl_ps:
+        tp.constraints.clear()
+    db.session.delete(t)
+
+    # clean up foreign key relationships
+    name = f"{api.name}.{t.name}"
+    delete_api_fk_rel_tables_on_delete(name)
     db.session.commit()
     
     return jsonify(''), 204

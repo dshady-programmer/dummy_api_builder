@@ -12,6 +12,10 @@ entrylist_relationships = db.Table('entrylist_relationships',
                                  )
 
 
+"""
+Relationship allows forward and reverse look ups..
+"""
+
 class Relationship(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     entry_ref_pk = db.Column(db.String, nullable=False) # reference to foreign key primary key
