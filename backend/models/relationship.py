@@ -13,7 +13,7 @@ entrylist_relationships = db.Table('entrylist_relationships',
 
 
 """
-Relationship allows forward and reverse look ups..
+Relationship allows reverse foreign key relationships...
 """
 
 class Relationship(db.Model):

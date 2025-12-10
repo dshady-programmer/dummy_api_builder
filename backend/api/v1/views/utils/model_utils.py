@@ -1,4 +1,4 @@
-from models import TableParameter,Api, Table,Constraint, db
+from models import TableParameter,Api, Table,Constraint, Relationship, db
 from .validate import validate_constraint, validate_dtType, validate_name
 
 
@@ -107,13 +107,24 @@ def update_table_parameter(param, tableparam, tableparam_names, user):
     # check update the param name
     if param_name:
         if param_name not in tableparam_names and validate_name(param_name):
+            previous_name = tableparam.name
             tableparam.name = param_name
-            tableparam_names.add(name)
+            tableparam_names.add(param_name)
+
+            # when this changes we need to update fk_rel relationship names 
+            rels = Relationship.query.filter(Relationship.fk_rel.endswith(previous_name)).all()
+            for rel in rels:
+                previous_rel = rel.fk_rel
+                split_rels = previous_rel.split(".")
+                split_rels[-1] = param_name
+                new_rel = ".".join(split_rels)
+                rel.fk_rel = new_rel
+                db.session.add(rel)
 
     if param_dt and validate_dtType(param_dt):
         tableparam.data_type = param_dt
     
-    print(param_dt)
+
     if param_dt_length and param_dt in ["string", "text"]:
         try:
             param_dt_length = int(param_dt_length)
@@ -234,6 +245,7 @@ def parse_and_update_tableparameters(table_parameters, table, user):
         delete_table_parameter(existing_table_parameter_mapper)
         print("existing_table_parameter_value", existing_table_parameter_mapper)
     except Exception as e:
+        print(e)
         error = e.args[0]
         db.session.rollback()
         if type(error) == dict and "error" in error:
