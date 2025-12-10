@@ -20,28 +20,27 @@ def filter_suffixes(tp_name):
     return tp_names 
 
 def filter_validation(tp_name, datatype, value, check_value):
-    
     try:
         if tp_name.endswith("__lt"):
-            if datatype == "integer":
-                return int(check_value) < int(value)
-            if datatype in ["date", "datetime"]:
-                return parse(check_value) < parse(value)
-        elif tp_name.endswith("__lte"):
-            if datatype == "integer":
-                return  int(check_value) <= int(value)
-            if datatype in ["date", "datetime"]:
-                return parse(check_value) <= parse(value)
-        elif tp_name.endswith("__gt"):
             if datatype == "integer":
                 return int(check_value) > int(value)
             if datatype in ["date", "datetime"]:
                 return parse(check_value) > parse(value)
-        elif tp_name.endswith("__gte"):
+        elif tp_name.endswith("__lte"):
             if datatype == "integer":
                 return  int(check_value) >= int(value)
             if datatype in ["date", "datetime"]:
-                return parse(value) >= parse(check_value)
+                return parse(check_value) >= parse(value)
+        elif tp_name.endswith("__gt"):
+            if datatype == "integer":
+                return int(check_value) < int(value)
+            if datatype in ["date", "datetime"]:
+                return parse(check_value) < parse(value)
+        elif tp_name.endswith("__gte"):
+            if datatype == "integer":
+                return  int(check_value) <= int(value)
+            if datatype in ["date", "datetime"]:
+                return parse(value) <= parse(check_value)
         elif tp_name.endswith("__startswith"):
             if datatype in ["text", "string"]:
                 return str(value).startswith(str(check_value))
@@ -76,14 +75,14 @@ def filter_validation(tp_name, datatype, value, check_value):
             return check_value == value
     except:
         return False
+    else:
+        return False
 
     
     
 
-def query_filter(tp_name, args, datatype, value):
+def query_filter(tp_name, args, datatype, value, found_valid_arg, filter_in):
     tp_names = filter_suffixes(tp_name)
-    found_valid_arg = False
-    filter_in = True
 
     for name in tp_names:
         if name in args:

@@ -224,7 +224,7 @@ def list_entries(args, table):
                 for entry in get_entries:
                     tp_name = entry.tableparameter.name
                     e_value = parse_value(entry.tableparameter.data_type.name, entry.value)
-                    found_valid_arg, filter_in = query_filter(tp_name, args, entry.tableparameter.data_type.name, entry.value)
+                    found_valid_arg, filter_in = query_filter(tp_name, args, entry.tableparameter.data_type.name, entry.value, found_valid_arg, filter_in)
                         
                     entry_data[tp_name] = e_value
                 if filter_in:
