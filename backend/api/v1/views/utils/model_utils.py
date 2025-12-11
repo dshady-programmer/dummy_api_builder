@@ -72,7 +72,7 @@ def create_table_parameter(param, table, tableparam_names, user):
             r_table = Table.query.filter_by(name=f_table, api_id=r_api.id).first()
             if not r_table:
                 raise Exception({"error": "Table name referenced doesn't exist"})
-            foreign_key_ref_table = ForeignKeyFieldReferenceTable.query.filter_by(table_id=r_table.id)
+            foreign_key_ref_table = ForeignKeyFieldReferenceTable.query.filter_by(table_id=r_table.id).first()
             p.foreign_key_reference_id = foreign_key_ref_table.id
         if const == "primary_key":
             primary_key_present = True
@@ -164,7 +164,7 @@ def update_table_parameter(param, tableparam, tableparam_names, user):
             # r_field = TableParameter.query.filter_by(name=field, table_id=r_table.id).first()
             # if not r_field:
             #     continue
-            foreign_key_ref_table = ForeignKeyFieldReferenceTable.query.filter_by(table_id=r_table.id)
+            foreign_key_ref_table = ForeignKeyFieldReferenceTable.query.filter_by(table_id=r_table.id).first()
             tableparam.foreign_key_reference_id = foreign_key_ref_table.id
         if const == "primary_key":
             tableparam.primary_key = True
@@ -182,6 +182,9 @@ def delete_table_parameter(table_params):
     for _, table_param in table_params.items():
         table_param.constraints.clear()
         db.session.delete(table_param) # it should delete all entries 
+        fk_ref_table_id = table_param.foreign_key_reference_id
+        if fk_ref_table_id:
+            Relationship.query.filter_by(foreign_key_rel_id=fk_ref_table_id).delete()
 
 
 

@@ -10,7 +10,7 @@ from . import create_app
 
 app = create_app()
 app.register_blueprint(app_views)
-CORS(app)
+CORS(app,resources={r"/*": {"origins": r"*"}})
 migrate = Migrate()
 
 

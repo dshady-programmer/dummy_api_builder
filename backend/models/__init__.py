@@ -9,4 +9,4 @@ from .entrylist import *
 from .table import *
 from .relationship import *
 from .reference import *
-from events.table_events import *
+from .events.table_events import *

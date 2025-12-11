@@ -6,7 +6,7 @@ To keep references to the foreign key table reference.
 from . import db
 
 class ForeignKeyFieldReferenceTable(db.Model):
-    __tablename__ = 'foreignkeyfieldreferenceTable'
+    __tablename__ = 'foreignkeyfieldreferencetable'
     id = db.Column(db.Integer, primary_key=True)
     table_id = db.Column(db.Integer, db.ForeignKey('table.id'), unique=True) # one to one relationship with table
     table_reference = db.relationship('Table', back_populates='reference')

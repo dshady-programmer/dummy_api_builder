@@ -20,5 +20,5 @@ class Relationship(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     entry_ref_pk = db.Column(db.String, nullable=False) # reference to foreign key primary key
     entrylists = db.relationship("EntryList", secondary=entrylist_relationships, backref="relationships", passive_deletes=True)
-    foreign_key_rel_id = db.Column(db.Integer, db.ForeignKey('foreignkeyreferencetable.id'))  # parent table reference for the foreign key relationship
-    child_table_id = db.Column(db.Integer, db.ForeignKey('table')) # child table reference for the foreign key relationship
+    foreign_key_rel_id = db.Column(db.Integer, db.ForeignKey('foreignkeyfieldreferencetable.id'))  # parent table reference for the foreign key relationship
+    child_table_id = db.Column(db.Integer, db.ForeignKey('table.id')) # child table reference for the foreign key relationship

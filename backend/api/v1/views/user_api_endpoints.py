@@ -11,6 +11,9 @@ from models.table import Table
 from models import db
 from .utils.validate import validate_name
 
+
+
+@app_views.route('/my_apis')
 @login_required
 def my_api_list(user):
     user_apis = user.user_apis

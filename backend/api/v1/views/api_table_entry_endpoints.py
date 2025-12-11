@@ -136,11 +136,12 @@ def update_delete_retrieve_entry(api_token, api_name, model_name, model_id):
     
 
         for rel in rels:
-            rel_key_data[rel.fk_model_name] = []
+            fk_rel_name = f"{rel.child_table.api.name.lower()}_{rel.child_table.name.lower()}s"
+            rel_key_data[fk_rel_name] = []
             for e_list_rel in rel.entrylists:
                 rel_data = {}
                 for ent in e_list_rel.entries:
                     rel_data[ent.tableparameter.name] = int(ent.value) if ent.tableparameter.data_type.name == "integer" else ent.value
-                rel_key_data[f"{rel.child_table.api.name.lower()}_{rel.child_table.name.lower()}s"].append(rel_data) # <api_name>_<model_name>s
+                rel_key_data[fk_rel_name].append(rel_data) # <api_name>_<model_name>s
         data["relationships"] = rel_key_data
         return jsonify(data), 200

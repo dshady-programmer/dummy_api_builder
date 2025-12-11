@@ -36,12 +36,12 @@ class TableParameter(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String, nullable=False)
     data_type = db.Column(db.Enum(DataTypes), default=DataTypes.string, nullable=False)
-    primary_key = db.Column(db.Boolean, default=False)
-    foreign_key_reference_id = db.Column(db.Integer, db.ForeignKey('foreignkeyreferencetable.id'), nullable=True) 
+    primary_key = db.Column(db.Boolean, default=False) 
+    foreign_key_reference_id = db.Column(db.Integer, db.ForeignKey('foreignkeyfieldreferencetable.id'), nullable=True) 
     dataType_length = db.Column(db.Integer, nullable=True) # Only valid for strings, text, integers
     table_id = db.Column(db.Integer, db.ForeignKey('table.id'))
     table = db.relationship('Table', back_populates='table_parameters')
-    constraints = db.relationship('Constraint', secondary=parameter_constraints, backref='table_parameters', cascade="all, delete-orphan, delete", passive_deletes=True)
+    constraints = db.relationship('Constraint', secondary=parameter_constraints, backref='table_parameters', cascade="all, delete", passive_deletes=True)
     entries = db.relationship('Entry', back_populates='tableparameter', cascade="all, delete-orphan, delete")
 
 

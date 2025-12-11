@@ -14,4 +14,4 @@ class Table(db.Model):
     table_parameters = db.relationship('TableParameter', back_populates='table', cascade="all, delete-orphan, delete")
     reference = db.relationship('ForeignKeyFieldReferenceTable', back_populates='table_reference', cascade='all, delete-orphan, delete', passive_deletes=True, uselist=False)
     entry_lists = db.relationship('EntryList', back_populates='table', cascade="all, delete-orphan, delete")
-    reverse_relationships = db.relationship('relationship', backref='child_table', cascade="all, delete-orphan, delete")
+    reverse_relationships = db.relationship('Relationship', backref='child_table', cascade="all, delete-orphan, delete")

@@ -1,8 +1,8 @@
 """initialize migration
 
-Revision ID: 7297514e43a1
+Revision ID: d8772635bf76
 Revises: 
-Create Date: 2025-12-08 15:57:36.315540
+Create Date: 2025-12-11 21:19:19.750112
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = '7297514e43a1'
+revision = 'd8772635bf76'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -23,13 +23,6 @@ def upgrade():
     sa.Column('name', sa.Enum('foreign_key', 'unique', 'nullable', 'primary_key', 'default', name='validconstraints'), nullable=False),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('name')
-    )
-    op.create_table('relationship',
-    sa.Column('id', sa.Integer(), nullable=False),
-    sa.Column('entry_ref_pk', sa.String(), nullable=False),
-    sa.Column('fk_rel', sa.String(), nullable=False),
-    sa.Column('fk_model_name', sa.String(), nullable=False),
-    sa.PrimaryKeyConstraint('id')
     )
     op.create_table('user',
     sa.Column('id', sa.Integer(), nullable=False),
@@ -66,14 +59,31 @@ def upgrade():
     sa.ForeignKeyConstraint(['table_id'], ['table.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
+    op.create_table('foreignkeyfieldreferencetable',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('table_id', sa.Integer(), nullable=True),
+    sa.ForeignKeyConstraint(['table_id'], ['table.id'], ),
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('table_id')
+    )
+    op.create_table('relationship',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('entry_ref_pk', sa.String(), nullable=False),
+    sa.Column('foreign_key_rel_id', sa.Integer(), nullable=True),
+    sa.Column('child_table_id', sa.Integer(), nullable=True),
+    sa.ForeignKeyConstraint(['child_table_id'], ['table.id'], ),
+    sa.ForeignKeyConstraint(['foreign_key_rel_id'], ['foreignkeyfieldreferencetable.id'], ),
+    sa.PrimaryKeyConstraint('id')
+    )
     op.create_table('tableparameter',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('name', sa.String(), nullable=False),
     sa.Column('data_type', sa.Enum('string', 'text', 'integer', 'boolean', 'date', 'datetime', name='datatypes'), nullable=False),
     sa.Column('primary_key', sa.Boolean(), nullable=True),
-    sa.Column('foreign_key_reference_field', sa.String(), nullable=True),
+    sa.Column('foreign_key_reference_id', sa.Integer(), nullable=True),
     sa.Column('dataType_length', sa.Integer(), nullable=True),
     sa.Column('table_id', sa.Integer(), nullable=True),
+    sa.ForeignKeyConstraint(['foreign_key_reference_id'], ['foreignkeyfieldreferencetable.id'], ),
     sa.ForeignKeyConstraint(['table_id'], ['table.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
@@ -109,10 +119,11 @@ def downgrade():
     op.drop_table('entrylist_relationships')
     op.drop_table('entry')
     op.drop_table('tableparameter')
+    op.drop_table('relationship')
+    op.drop_table('foreignkeyfieldreferencetable')
     op.drop_table('entrylist')
     op.drop_table('table')
     op.drop_table('api')
     op.drop_table('user')
-    op.drop_table('relationship')
     op.drop_table('constraint')
     # ### end Alembic commands ###
