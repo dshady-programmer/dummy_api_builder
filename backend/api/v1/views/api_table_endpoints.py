@@ -9,7 +9,7 @@ from api.v1.auth.auth import login_required
 from models import db, Api, Table
 from .utils.validate import validate_name
 from .utils.model_utils import parse_and_create_tableparameters, parse_and_update_tableparameters
-from .utils.user_api_utils import delete_api_fk_rel_tables_on_delete, update_api_fk_rel_tables_on_update
+
 
 
 """
@@ -77,10 +77,6 @@ def update_model(user, api_id, model_name):
     if type(table_parameters) != list:
         return jsonify({"error": "table_parameter must be a list"}), 400
     if name and validate_name(name):
-        # update api_fk_relationship tables
-        old_ref_field = f"{api.name}.{get_table.name}"
-        new_ref_field = f"{api.name}.{name}"
-        update_api_fk_rel_tables_on_update(old_ref_field, new_ref_field)
         get_table.name = name
 
     if description:
@@ -106,12 +102,16 @@ def show_model(user, api_id, model_name):
         tbl_constraints = []
         for const in params.constraints:
             tbl_constraints.append(const.name.value)
+        foreign_key_ref = None
+        ref_table = params.foreign_key_reference_table
+        if ref_table:
+            foreign_key_ref = f"{ref_table.table_reference.api.name}.{ref_table.table_reference.name}"
         tbl_params.append({
             "index": params.id,
             "name": params.name,
             "datatype": params.data_type.name,
             "dt_length": params.dataType_length,
-            "foreign_key_rf": params.foreign_key_reference_field,
+            "foreign_key_rf": foreign_key_ref,
             "constraints": tbl_constraints
         })
     
@@ -136,9 +136,6 @@ def delete_model(user, api_id, model_name):
         tp.constraints.clear()
     db.session.delete(t)
 
-    # clean up foreign key relationships
-    name = f"{api.name}.{t.name}"
-    delete_api_fk_rel_tables_on_delete(name)
     db.session.commit()
     
     return jsonify(''), 204

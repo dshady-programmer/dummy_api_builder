@@ -1,5 +1,5 @@
-from models import TableParameter,Api, Table,Constraint, Relationship, db
-from .validate import validate_constraint, validate_dtType, validate_name
+from models import TableParameter,Api, Table,Constraint, Relationship, ForeignKeyFieldReferenceTable, db
+from .validate import validate_constraint, validate_dtType, validate_name, validate_primary_key_dtType
 
 
 def create_table_parameter(param, table, tableparam_names, user):
@@ -53,7 +53,9 @@ def create_table_parameter(param, table, tableparam_names, user):
         constraints.add("unique") # add unique to constraint if it's a primary key.
         if "nullable" in constraints:
             # You definitely can't have a field that is the PK and still allow a null value
-            constraints.remove("nullable") 
+            constraints.remove("nullable")
+        if not validate_primary_key_dtType(param_dt):
+            raise Exception({"error": "primary key data type must be text string or integer"})
     for const in constraints:
         # There can be more than one constraints for a model field
         if not validate_constraint(const):
@@ -70,7 +72,8 @@ def create_table_parameter(param, table, tableparam_names, user):
             r_table = Table.query.filter_by(name=f_table, api_id=r_api.id).first()
             if not r_table:
                 raise Exception({"error": "Table name referenced doesn't exist"})
-            p.foreign_key_reference_field = fk_rf
+            foreign_key_ref_table = ForeignKeyFieldReferenceTable.query.filter_by(table_id=r_table.id)
+            p.foreign_key_reference_id = foreign_key_ref_table.id
         if const == "primary_key":
             primary_key_present = True
             p.primary_key = True
@@ -107,24 +110,12 @@ def update_table_parameter(param, tableparam, tableparam_names, user):
     # check update the param name
     if param_name:
         if param_name not in tableparam_names and validate_name(param_name):
-            previous_name = tableparam.name
             tableparam.name = param_name
             tableparam_names.add(param_name)
-
-            # when this changes we need to update fk_rel relationship names 
-            rels = Relationship.query.filter(Relationship.fk_rel.endswith(previous_name)).all()
-            for rel in rels:
-                previous_rel = rel.fk_rel
-                split_rels = previous_rel.split(".")
-                split_rels[-1] = param_name
-                new_rel = ".".join(split_rels)
-                rel.fk_rel = new_rel
-                db.session.add(rel)
 
     if param_dt and validate_dtType(param_dt):
         tableparam.data_type = param_dt
     
-
     if param_dt_length and param_dt in ["string", "text"]:
         try:
             param_dt_length = int(param_dt_length)
@@ -152,6 +143,8 @@ def update_table_parameter(param, tableparam, tableparam_names, user):
         constraints.add("unique")
         if "nullable" in constraints:
             constraints.remove("nullable")
+        if not validate_primary_key_dtType(param_dt):
+            raise Exception({"error": "primary key data type must be text string or integer"})
 
     tableparam.constraints.clear()
     for const in constraints:
@@ -171,7 +164,8 @@ def update_table_parameter(param, tableparam, tableparam_names, user):
             # r_field = TableParameter.query.filter_by(name=field, table_id=r_table.id).first()
             # if not r_field:
             #     continue
-            tableparam.foreign_key_reference_field = fk_rf
+            foreign_key_ref_table = ForeignKeyFieldReferenceTable.query.filter_by(table_id=r_table.id)
+            tableparam.foreign_key_reference_id = foreign_key_ref_table.id
         if const == "primary_key":
             tableparam.primary_key = True
             primary_key_present = True
@@ -187,8 +181,7 @@ def update_table_parameter(param, tableparam, tableparam_names, user):
 def delete_table_parameter(table_params):
     for _, table_param in table_params.items():
         table_param.constraints.clear()
-        db.session.delete(table_param)
-        # update entrylists feature coming soon
+        db.session.delete(table_param) # it should delete all entries 
 
 
 
@@ -243,7 +236,6 @@ def parse_and_update_tableparameters(table_parameters, table, user):
             raise Exception({"error": "Table must contain atleast one primary key"})
         
         delete_table_parameter(existing_table_parameter_mapper)
-        print("existing_table_parameter_value", existing_table_parameter_mapper)
     except Exception as e:
         print(e)
         error = e.args[0]

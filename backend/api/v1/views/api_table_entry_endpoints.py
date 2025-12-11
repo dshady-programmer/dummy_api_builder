@@ -8,17 +8,26 @@ from dateutil.parser import parse
 from api.v1.views import app_views
 from flask import request, jsonify, make_response
 from api.v1.auth.auth import login_required
-from models import db
-from models.api import Api
-from models.table import Table
-from models.user import User
-from models.tableparameter import TableParameter
-from models.constraints import Constraint
-from models.entry import Entry
-from models.entrylist import EntryList
-from models.relationship import Relationship
-from .utils.validate import validate_entry_constraints, validate_entry_value_length, validate_entry_value
-from .utils.model_entry_utils import create_entry, list_entries, update_entry
+from models import (
+    Api,
+    Table,
+    User,
+    Entry,
+    EntryList,
+    Relationship,
+    ForeignKeyFieldReferenceTable, db
+)
+from .utils.validate import (
+
+    validate_entry_constraints, 
+    validate_entry_value_length, 
+    validate_entry_value
+)
+from .utils.model_entry_utils import (
+    create_entry, 
+    list_entries, 
+    update_entry
+) 
 
 
 
@@ -104,9 +113,10 @@ def update_delete_retrieve_entry(api_token, api_name, model_name, model_id):
     
 
 
+    fk_ref_table = ForeignKeyFieldReferenceTable.query.filter_by(table_id=table.id).first() # to grab reference tables incase of foreign key relationships 
     if request.method == "DELETE":
         Entry.query.filter_by(entry_list_id=e_list.id).delete()
-        rels = Relationship.query.filter(Relationship.entry_ref_pk==e_list.primary_key_value, Relationship.fk_rel.startswith(f"{api_name}.{model_name}"))
+        rels = Relationship.query.filter_by(entry_ref_pk=e_list.primary_key_value, foreign_key_rel_id=fk_ref_table.id)
         for r in rels:
             r.entrylists.clear()
             db.session.delete(r)
@@ -120,9 +130,8 @@ def update_delete_retrieve_entry(api_token, api_name, model_name, model_id):
         for data_entry in e_list.entries:
             fieldName = data_entry.tableparameter.name
             data[fieldName] = int(data_entry.value) if data_entry.tableparameter.data_type.name == "integer" else data_entry.value
-        tableKeyName = f"{api_name}.{model_name}"
         # rel_key = db.session(Relationship).filter(Relationship.fk_rel.like(f"{tableKeyName}%"), Relationship.entry_ref_pk=e_list.primary_key_value).first()
-        rels = Relationship.query.filter(Relationship.fk_rel.startswith(f"{tableKeyName}"), Relationship.entry_ref_pk==e_list.primary_key_value)
+        rels = Relationship.query.filter_by(entry_ref_pk=e_list.primary_key_value, foreign_key_rel_id=fk_ref_table.id)
         rel_key_data = {} # format {"posts":[..]}
     
 
@@ -132,6 +141,6 @@ def update_delete_retrieve_entry(api_token, api_name, model_name, model_id):
                 rel_data = {}
                 for ent in e_list_rel.entries:
                     rel_data[ent.tableparameter.name] = int(ent.value) if ent.tableparameter.data_type.name == "integer" else ent.value
-                rel_key_data[rel.fk_model_name].append(rel_data)
+                rel_key_data[f"{rel.child_table.api.name.lower()}_{rel.child_table.name.lower()}s"].append(rel_data) # <api_name>_<model_name>s
         data["relationships"] = rel_key_data
         return jsonify(data), 200

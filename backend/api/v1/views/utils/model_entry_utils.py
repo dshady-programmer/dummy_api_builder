@@ -15,23 +15,23 @@ def datetime_repr(entry_value, type):
 
 
 def validate_create_fk_relationships(tbl_p, api_name, table_name, entry_name, entry_value, e_list, stat, err_msg):
-    # rel_key is <foreign_ref_field>.childapi.table.field (see model definition)
-    rel_key = f"{tbl_p.foreign_key_reference_field}->{api_name}.{table_name}.{entry_name}" # incase of foreign key
-    foreignKey_model_name = f"{api_name.lower()}_{table_name.lower()}s" # reverse lookup key 
+
+    rel_id = tbl_p.foreign_key_reference_id
+    child_table_id = tbl_p.table_id
     if not stat:
         if not err_msg.startswith('Primary key'):
-            rels = Relationship.query.filter_by(fk_rel=rel_key).all() # foreign key reference table is either deleted or updated.
+            rels = Relationship.query.filter_by(foreign_key_rel_id=rel_id).all() # foreign key reference table is either deleted or updated.
         else:
-            rels = Relationship.query.filter_by(fk_rel=rel_key, entry_ref_pk=entry_value).all()  # check if relationship already has a field referencing the foreign key table row
+            rels = Relationship.query.filter_by(foreign_key_rel_id=rel_id, entry_ref_pk=entry_value).all()  # check if relationship already has a field referencing the foreign key table row
             if not rels:
                 rels = None
         raise Exception({"error": err_msg, "relationships": rels})
     else:
         # if everything goes fine.. add the entrylist to a relationship using the foreign key primary key (if not already existing create new one) 
         try:
-            relationship = Relationship.query.filter_by(fk_rel = rel_key, entry_ref_pk = entry_value, fk_model_name=foreignKey_model_name).first() 
+            relationship = Relationship.query.filter_by(foreign_key_rel_id = rel_id, entry_ref_pk = entry_value, child_table_id=child_table_id).first() 
             if not relationship:
-                relationship = Relationship(entry_ref_pk=entry_value, fk_rel=rel_key, fk_model_name=foreignKey_model_name)
+                relationship = Relationship(entry_ref_pk=entry_value, foreign_key_rel_id=rel_id, child_table_id=child_table_id)
             relationship.entrylists.append(e_list)
             db.session.add(relationship)
         except:
@@ -70,14 +70,7 @@ def validate_create_update_entry_items(entry, parameters, e_list, api_name, tabl
         if update:
             e = Entry.query.filter_by(tableparameter_id=tbl_p.id, entry_list_id=e_list.id).first() # Grab the entry to be updated
             if e:
-                # If the entry exists update the value
-                rel_key = f"{tbl_p.foreign_key_reference_field}->{api.name}.{table.name}.{entry_name}"
-                relationship = Relationship.query.filter_by(fk_rel = rel_key, entry_ref_pk = e.value, fk_model_name=foreignKey_model_name).first() 
-                # remove the previous value from the relationship before updating it
-                if relationship:
-                    relationship.entrylists.remove(e_list)
                 e.value = entry_value 
-                db.session.add(relationship)
                 db.session.add(e)
 
         if not e:
@@ -94,7 +87,6 @@ def validate_create_update_entry_items(entry, parameters, e_list, api_name, tabl
 
         if primary_key_fields != primary_key_ids:
             raise Exception({"error": "Primary key field provided doesn't match with your table primary keys"})
-        print("primary keys", primary_key_fields, primary_key_ids)
         primary_key_value = "".join([ str(key["value"]) for key in primary_keys_sorted])
         # check if primary key already exists
         if EntryList.query.filter_by(table_id=table.id, primary_key_value=primary_key_value).first():
@@ -113,7 +105,7 @@ def create_entry(table, entry, user, api_name):
   
         required_parameters = []
         parameters = {}
-        primary_key_fields = set() # needed to ensure users don't create the wrong primary key
+        primary_key_fields = set() # needed to ensure users don't create entries without all the primary key fields present
         for table_parameter in table.table_parameters:
             parameters[table_parameter.name] = table_parameter
             for c in table_parameter.constraints:
