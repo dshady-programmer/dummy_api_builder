@@ -128,6 +128,7 @@ const Index = ({ fList, mParam, endpoint, title, btnTitle, method }) => {
                                                 <option value="string">String</option>
                                                 <option value="text">Text</option>
                                                 <option value="integer">Integer</option>
+                                                <option value="decimal">Decimal</option>
                                                 <option value="boolean">Boolean</option>
                                                 <option value="date">Date</option>
                                                 <option value="datetime">Datetime</option>
@@ -140,18 +141,36 @@ const Index = ({ fList, mParam, endpoint, title, btnTitle, method }) => {
                                                 <option value="foreign_key" selected={currentTbl_params?.constraints?.includes("foreign_key") ? true : false}>Foreign Key</option>
                                                 <option value="unique" selected={currentTbl_params?.constraints?.includes("unique") ? true : false}>Unique</option>
                                                 <option value="nullable" selected={currentTbl_params?.constraints?.includes("nullable") ? true : false}>Nullable</option>
+                                                <option value="default" selected={currentTbl_params?.constraints?.includes("default") ? true : false}>Default value</option>                  
                                             </select>
                                         </div>
                                         <div>
-                                            {/*  */}
+
                                             <label htmlFor={`field-fk-ref-${field}`}>Foreign Key Reference Table</label>
                                             <input type="text" id={`field-fk-ref-${field}`} name={`foreign_key_rf-${field}`} placeholder="api.table" value={currentTbl_params?.foreign_key_rf || ""} onChange={handleChange} />
 
                                         </div>
+                                        <div>
+                                            <label htmlFor={`field-default-${field}`}>Default value</label>
+                                            <input type="text" id={`field-default-${field}`} name={`default_value-${field}`} placeholder="default" value={currentTbl_params?.default_value || ""} onChange={handleChange} />
+
+                                        </div>
+                                        <div>
+                                            <small><b>Note: </b> &nbsp;If you select primary key and default constraint it will autogenerate keys for your model depending on the data type</small>
+
+                                        </div>
+                                        <div>
+                                            <small>For string/text data types primary key default values would be uuid regardless of the length constraint field length constraint would only validate on user passed pk values</small>
+
+                                        </div>
+
+                                        {/* currentTbl_params?.constraints?.includes("default") */}
                                         <button type="button" style={{ float: "right" }} onClick={() => {
                                             setFieldList((prev) => prev.filter(v => v != field));
                                             setModelParam(prevModelP => ({ ...prevModelP, tbl_params: prevModelP.tbl_params.filter((entry) => entry.index != field) }))
                                         }}>Remove</button>
+
+                                        
                                     </section>
                                 )
                             })}
