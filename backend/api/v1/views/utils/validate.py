@@ -4,6 +4,28 @@ of validation check helper functions.
 """
 
 
+def autogenerate_keys(tb_param):
+    import uuid
+    import secrets
+    from models import Entry
+    datatype = tb_param.data_type.name 
+    value = None
+
+    while True:
+        if datatype in ["string", "text"]:
+            value = str(uuid.uuid4())
+        
+        else:
+            lowest_value = 1
+            value = secrets.randbelow(2001)
+            if value < lowest_value:
+                continue
+        e = Entry.query.filter_by(tableparameter_id=tb_param.id, value=value).first()
+        if not e:
+            break
+
+    return value
+
 def validate_constraint(constraint):
     valid_constraints = [
         "foreign_key",
@@ -82,31 +104,49 @@ def validate_entry_value_length(value, type, length):
     return True
 
 
-def validate_entry_constraints(value, tbl_p, user=None):
+def validate_entry_constraints(value, tbl_p):
     fk = None
+    default_value = None
     consts = [const.name.value for const in tbl_p.constraints]
-    if "nullable" in consts:
-        if not value:
-            return True, "nullable", None
-    if "foreign_key" in consts:
-        from models.table import Table
-        from models.api import Api
-        from models.tableparameter import TableParameter
-        from models.entrylist import EntryList
-        from models.relationship import Relationship
-        get_ref_table = tbl_p.foreign_key_reference_table
+    for c in ["default", "nullable"]:
+        if c in consts:
+            condition = (type(value) == str and not value) or (type(value) != bool and not value)
+            if condition and c == "default":
+                if tbl_p.primary_key:
+                    # auto generate keys for primary keys
+                    default_value = autogenerate_keys(tbl_p)
+                    return True, c, None, default_value
+                elif "foreign_key" in consts:
+                    value = tbl_p.default_value # we need to ensure the default value exist.
+                    fk = "default_fk"
+                    default_value = str(value)
+                    break
+            if condition:
+                return True, c, None, default_value
+        
+    if (type(value) == str and not value) or (type(value) != bool and not value):
+        return False, "non-nullable", "Value can't be empty", default_value
 
+    value = str(value)
+    if "foreign_key" in consts:
+        from models.entrylist import EntryList
+
+        if not fk:
+            fk = "fk"
+        get_ref_table = tbl_p.foreign_key_reference_table
+      
         if not get_ref_table:
-            return False, "fk", "Reference table doesn't exist"
+            return False, fk, "Reference table doesn't exist", default_value
+        print('got here', get_ref_table, fk)
         e_li = EntryList.query.filter_by(table_id=get_ref_table.table_id, primary_key_value = value).first()
+        print('e_li', e_li)
         if not e_li:
-            return False, "fk", "Primary key referenced for the foreign key doesn't exist"
-        fk = "fk"
+            return False, fk, f"Primary key '{value}' referenced for the foreign key doesn't exist on the parent table", default_value
     if "unique" in consts:
         from models.entry import Entry
         if Entry.query.filter_by(tableparameter_id=tbl_p.id, value=value).first():
-            return False, "uniq", f"{value} already exists in the database. It must be unique"
-    return True, fk, None
+            return False, "uniq", f"{value} already exists in the database. It must be unique", default_value
+    return True, fk, None, default_value
 
 
 
@@ -115,3 +155,7 @@ def validate_primary_key_dtType(data_type):
     if data_type not in VALID_PRIMARY_KEY_DATATYPES:
         return False
     return True
+
+
+def unique_constraints_validator():
+    pass

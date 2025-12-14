@@ -14,7 +14,7 @@ def datetime_repr(entry_value, type):
 
 
 
-def validate_create_fk_relationships(tbl_p, api_name, table_name, entry_name, entry_value, e_list, stat, err_msg):
+def validate_create_fk_relationships(tbl_p, entry_value, e_list, stat, err_msg):
 
     rel_id = tbl_p.foreign_key_reference_id
     child_table_id = tbl_p.table_id
@@ -39,7 +39,7 @@ def validate_create_fk_relationships(tbl_p, api_name, table_name, entry_name, en
 
 
 
-def validate_create_update_entry_items(entry, parameters, e_list, api_name, table, user, primary_key_fields, update=False):
+def validate_create_update_entry_items(entry, parameters, e_list, table, primary_key_fields, update=False):
     primary_keys = []
     for entry_name, entry_value in entry.items():
         if entry_name not in parameters:
@@ -47,11 +47,19 @@ def validate_create_update_entry_items(entry, parameters, e_list, api_name, tabl
                 continue
             raise Exception({"error": f"such field name '{entry_name}' doesn't exist"})
         tbl_p = parameters[entry_name]
-        stat, const_type, err_msg = validate_entry_constraints(entry_value, tbl_p, user) # Validating the entry against the existing constraint
-        if const_type == "nullable" and stat:
+        stat, const_type, err_msg, default_return_value = validate_entry_constraints(entry_value, tbl_p) # Validating the entry against the existing constraint
+        if const_type == "default" and stat:
+            entry_value = tbl_p.default_value # set default value
+        elif const_type == "nullable" and stat:
             continue # waive null value for nullable constraints
-        if const_type == "fk":
-            validate_create_fk_relationships(tbl_p, api_name, table.name, entry_name, entry_value, e_list, stat, err_msg)
+
+        if const_type == "non-nullable" and not stat: # passes empty string
+            raise Exception({"error": err_msg}) 
+        entry_value = str(entry_value) # convert to a string since all values are stored as text in the database.
+        if const_type == "fk" or const_type == "default_fk":
+            if const_type == "default_fk":
+                entry_value = default_return_value
+            validate_create_fk_relationships(tbl_p, entry_value, e_list, stat, err_msg)
         else:
             if not stat and const_type == "uniq":
                 raise Exception({"error": err_msg})
@@ -76,6 +84,8 @@ def validate_create_update_entry_items(entry, parameters, e_list, api_name, tabl
         if not e:
             e = Entry(value=entry_value, tableparameter_id=tbl_p.id)
             e_list.entries.append(e)
+        parameters.pop(entry_name) # remove already processed entry_name
+        
     
     if not primary_keys and not update:
         raise Exception({"error", "No primary key value"})
@@ -96,6 +106,8 @@ def validate_create_update_entry_items(entry, parameters, e_list, api_name, tabl
 
 
 
+
+
 def create_entry(table, entry, user, api_name):
     
     try:
@@ -108,14 +120,24 @@ def create_entry(table, entry, user, api_name):
         primary_key_fields = set() # needed to ensure users don't create entries without all the primary key fields present
         for table_parameter in table.table_parameters:
             parameters[table_parameter.name] = table_parameter
+            required = True
             for c in table_parameter.constraints:
-                if c.name.value == "nullable":
-                    continue
+                if c.name.value == "nullable" or c.name.value == "default":
+                    required = False
                 if c.name.value == "primary_key":
                     primary_key_fields.add(table_parameter.id)
-                
-            required_parameters.append(table_parameter)
+                    for _c in table_parameter.constraints:
+                        # check if default constraint is present along side primary key so it can autogenerate a value.
+                        # this step is necessary because the primary key field is a required parameter regardless of whether default constraint or not.
+                        if _c.name.value == "default":
+                            if table_parameter.name not in entry:
+                                entry[table_parameter.name] = None
+                            required = True
+                            break
+            if required:   
+                required_parameters.append(table_parameter)
         if len(entry) < len(required_parameters) or len(entry) > len(parameters):
+            # this doesn't effectively validate against absence of non-nullable fields...
             raise Exception({"error": "Incomplete field or a non declared field has been passed"})
         e_list = EntryList(table_id = table.id)
         db.session.add(e_list)
@@ -131,7 +153,25 @@ def create_entry(table, entry, user, api_name):
         }
         
         """
-        validate_create_update_entry_items(entry, parameters, e_list, api_name, table, user, primary_key_fields)
+        validate_create_update_entry_items(entry, parameters, e_list, table, primary_key_fields)
+
+        # after all the required parameters have been sorted
+        # iterate over the remaining parameters and create an entry for them with null values and also ensure they do have nullable constraints on their respective fields (thus validating that non-nullable fields are indeed passed)
+        for tb_param_name, tb_param  in parameters.items():
+            tbl_constraints = [c.name.value for c in tb_param.constraints]
+            if "nullable" in tbl_constraints or "default" in tbl_constraints:
+                stat, const_type, err_msg, default_return_value = validate_entry_constraints(None, tb_param)
+                if "default" in tbl_constraints:
+                    if const_type == "default_fk":
+                        validate_create_fk_relationships(tb_param, default_return_value, e_list, stat, err_msg)
+                    e = Entry(tableparameter_id=tb_param.id, value=default_return_value)
+                else:
+                    e = Entry(tableparameter_id=tb_param.id)
+                e_list.entries.append(e)
+            else:
+                raise Exception({"error": f"{tb_param_name} is a non-nullable field (can't be empty)"})
+
+        
 
     except Exception as e:
         print(e)
@@ -171,7 +211,7 @@ def update_entry(entry, table, e_list, api_name, user):
                 if c.name.value == "primary_key":
                     primary_key_fields.add(table_parameter.id)
         
-        validate_create_update_entry_items(entry, parameters, e_list, api_name, table, user, primary_key_fields, True)      
+        validate_create_update_entry_items(entry, parameters, e_list, table, primary_key_fields, True)      
 
     except Exception as e:
         print(e)
@@ -215,8 +255,9 @@ def list_entries(args, table):
                 filter_in = True
                 for entry in get_entries:
                     tp_name = entry.tableparameter.name
-                    e_value = parse_value(entry.tableparameter.data_type.name, entry.value)
-                    found_valid_arg, filter_in = query_filter(tp_name, args, entry.tableparameter.data_type.name, entry.value, found_valid_arg, filter_in)
+                    e_value = parse_value(entry.tableparameter, entry.value)
+                    if e_value:
+                        found_valid_arg, filter_in = query_filter(tp_name, args, entry.tableparameter.data_type.name, entry.value, found_valid_arg, filter_in)
                         
                     entry_data[tp_name] = e_value
                 if filter_in:
@@ -226,11 +267,11 @@ def list_entries(args, table):
         data = []
         for entry_list in table.entry_lists:
             if entry_list.entries:
-                data.append({entry.tableparameter.name: int(entry.value) if entry.tableparameter.data_type.name == "integer" else entry.value for entry in entry_list.entries})
+                data.append({entry.tableparameter.name: parse_value(entry.tableparameter, entry.value) for entry in entry_list.entries})
     except Exception as e:
         print(e)
         return {"error": "Something went wrong"} 
     else:
-        return data 
+        return {"data": data}
     
 

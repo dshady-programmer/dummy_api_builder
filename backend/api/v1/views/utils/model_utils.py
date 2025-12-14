@@ -1,13 +1,128 @@
 from models import TableParameter,Api, Table,Constraint, Relationship, ForeignKeyFieldReferenceTable, db
-from .validate import validate_constraint, validate_dtType, validate_name, validate_primary_key_dtType
+from .validate import validate_constraint, validate_dtType, validate_name, validate_primary_key_dtType, validate_entry_value, validate_entry_value_length
 
 
-def create_table_parameter(param, table, tableparam_names, user):
+
+def table_parameter_constraints_checks(table, table_param, constraints, entry_present, prev_constraints, update):
+    
+    
+    if "primary_key" in constraints:
+        if entry_present:
+            if not update or (update and "primary_key" not in prev_constraints) :
+                raise Exception({"error": "Can't add new primary key field to a table with already existing data."})
+            
+        constraints.add("unique") # add unique to constraint if it's a primary key.
+        if "nullable" in constraints:
+            # You definitely can't have a field that is a PK and still allow a null value
+            constraints.remove("nullable")
+        if not validate_primary_key_dtType(param_dt):
+            raise Exception({"error": "primary key data type must be either text, string or integer"})
+    else:
+        if entry_present and update and "primary_key" in prev_constraints:
+            raise Exception({"error": "Can't remove an existing primary key field from a table with already existing data."})
+        table_param.primary_key = False
+       
+        
+        if update and entry_present and "unique" in constraints and "unique" not in prev_constraints:
+            # only check unique constraints on existing table fields if the unique constraint wasn't present in previous constraints set
+            # validate all entries in the table and ensure the field existing values are unique if it fails raise and error
+            # check for nullable constraints is also done to allow exempt null values from unique constraint check 
+            pass 
+            
+
+        elif not update and "unique" in constraints and entry_present:
+            constraints.add("nullable")
+            # create entries to add the null values
+
+        if entry_present and "foreign_key" in constraints and "default" not in constraints:
+            constraints.add("nullable")
+        # run the foreign key validation check 
+
+        # check if only nullable is present 
+        # create entries if it's not update
+
+    if "default" in constraints:
+        if "primary_key" not in constraints:
+            # if it has a unique constraint and not a primary key constraint raise an error
+            if "unique" in constraints:
+                constraints.remove("unique")
+            else:
+                if not validate_entry_value(param_default_value, param_dt):
+                    raise Exception({"error": "Wrong data type passed for default value"})
+                if not validate_entry_value_length():
+                    raise Exception({"error": "Default values must obey max length restriction"})
+                table_param.default_value = param_default_value
+        else:
+            # if it has primary key then the backend auto generates keys
+
+            if "foreign_key" in constraints:
+                # default, primary_key and foreign key constraints can't coexist (primary_key + default autogenerates unique values can cause unintended values with foreign key)
+                raise Exception({"error": "A default primary key field can't also have a foreign key constraint"})
+        
+        # for update: update the existing entries to reflect the default value if not already existing (latest default value) 
+        # create entries with the latest default values.
+    
+
+
+
+
+
+
+
+
+def check_and_validate_tableparameter(table, table_param, param, param_dt, param_default_value, constraints, user, entry_present, update=False):
     primary_key_present = False
+    prev_constraints = None
+    if update:
+        prev_constraints = [c.name.value for c in table_param.constraints]
+    
+    table_parameter_constraints_checks(table, table_param, constraints, entry_present, prev_constraints, update)
+           
+        
+    if update:
+        table_param.constraints.clear()
+
+    for const in constraints:
+        # There can be more than one constraints for a model field
+        if not validate_constraint(const):
+            # Check if the constraints are valid
+            raise Exception({"error": "invalid constraint"})
+        if const == "foreign_key":
+
+            if not validate_primary_key_dtType(param_dt): # since foreign key would always reference a primary key of the parent table.. it should conform with the valid data types
+                # you can use of a foreign with the data type int, string or text. It doesn't have to tie strictly the parent table primary key field datatype
+                raise Exception({"error": "Foreign key data type must be either text, string or integer"})
+            fk_rf = param.get("foreign_key_rf") #expected format(api.table)
+            if not fk_rf:
+                raise Exception({"error": "Expected a foreign key reference field."})
+            f_api, f_table = fk_rf.split(".") # Check if the reference api and model are valid for it to be a foreign key field
+            r_api = Api.query.filter_by(name=f_api, user_id=user.id).first()
+            if not r_api:
+                raise Exception({"error": "Api name referenced in the foreign key doesn't exist"})
+            r_table = Table.query.filter_by(name=f_table, api_id=r_api.id).first()
+            if not r_table:
+                raise Exception({"error": "Table name referenced doesn't exist"})
+            foreign_key_ref_table = ForeignKeyFieldReferenceTable.query.filter_by(table_id=r_table.id).first()
+            table_param.foreign_key_reference_id = foreign_key_ref_table.id
+        if const == "primary_key":
+            primary_key_present = True
+            table_param.primary_key = True
+        
+        get_c = Constraint.query.filter_by(name=const).first()
+        if get_c:
+            table_param.constraints.append(get_c)
+        else:
+            table_param.constraints.append(Constraint(name=const))
+    return primary_key_present
+
+def create_table_parameter(param, table, tableparam_names, user, entry_present):
+    
     param_name = param.get("name")
     param_dt = param.get("datatype")
     param_dt_length = param.get("dt_length")
+    param_default_value = param.get("default_value", None)
     constraints = param.get("constraints") or []
+    
     if type(constraints) != list:
         raise Exception({"error": "Invalid constraints type"})
     constraints = set(constraints) # incase of duplicate values.
@@ -49,63 +164,21 @@ def create_table_parameter(param, table, tableparam_names, user):
     table.table_parameters.append(p)
     # keep track of the param_name to avoid duplication later along the line
     tableparam_names.add(param_name)
-    if "primary_key" in constraints:
-        constraints.add("unique") # add unique to constraint if it's a primary key.
-        if "nullable" in constraints:
-            # You definitely can't have a field that is the PK and still allow a null value
-            constraints.remove("nullable")
-        if not validate_primary_key_dtType(param_dt):
-            raise Exception({"error": "primary key data type must be text string or integer"})
-    for const in constraints:
-        # There can be more than one constraints for a model field
-        if not validate_constraint(const):
-            # Check if the constraints are valid
-            raise Exception({"error": "invalid constraint"})
-        if const == "foreign_key":
-            fk_rf = param.get("foreign_key_rf") #expected format(api.table)
-            if not fk_rf:
-                raise Exception({"error": "Expected a foreign key reference field."})
-            f_api, f_table = fk_rf.split(".") # Check if the reference api and model are valid for it to be a foreign key field
-            r_api = Api.query.filter_by(name=f_api, user_id=user.id).first()
-            if not r_api:
-                raise Exception({"error": "Api name referenced in the foreign key doesn't exist"})
-            r_table = Table.query.filter_by(name=f_table, api_id=r_api.id).first()
-            if not r_table:
-                raise Exception({"error": "Table name referenced doesn't exist"})
-            foreign_key_ref_table = ForeignKeyFieldReferenceTable.query.filter_by(table_id=r_table.id).first()
-            p.foreign_key_reference_id = foreign_key_ref_table.id
-        if const == "primary_key":
-            primary_key_present = True
-            p.primary_key = True
-        
-        get_c = Constraint.query.filter_by(name=const).first()
-        if get_c:
-            p.constraints.append(get_c)
-        else:
-            p.constraints.append(Constraint(name=const))
-    return primary_key_present
+
+    return check_and_validate_tableparameter(table, p, param, param_dt, param_default_value, constraints, user, entry_present)
 
 
-def update_table_parameter(param, tableparam, tableparam_names, user):
-    primary_key_present = False
+def update_table_parameter(param,table, tableparam, tableparam_names, user, entry_present):
     param_name = param.get("name")
     param_dt = param.get("datatype")
     param_dt_length = param.get("dt_length")
+    param_default_value = param.get("default_value", None)
     constraints = param.get("constraints") or []
     if type(constraints) != list:
         raise Exception({"error": "Invalid constraints type"})
     constraints = set(constraints) # incase of duplicate values.
-
    
     
-    # """
-    # in the next version you should be able to add more fields to a model if data already exists
-    # but would require a default value to prepopulate previously created module.
-    # """
-    # if entry_present:
-    #     return jsonify({"error": "You cannot edit or add new field to the model when it already has data"}), 400
-    # if validate_name(param_name) and param_dt and validate_dtType(param_dt):
-    #     p = TableParameter(name=param_name, table_id=get_table.id, data_type=param_dt)
 
     # check update the param name
     if param_name:
@@ -125,57 +198,8 @@ def update_table_parameter(param, tableparam, tableparam_names, user):
     else:
         tableparam.dataType_length = None
             
-    # else:
-    #     if entry_present:
-    #         if "nullable" in constraints:
-    #             if "primary_key" in [con.name.value for con in p.constraints]:
-    #                 continue
-    #             get_c = Constraint.query.filter_by(name="nullable").first()
-    #             if get_c:
-    #                 p.constraints.append(get_c)
-    #             else:
-    #                 p.constraints.append(Constraint(name="nullable"))
-    #         continue
-    #     # if validate_name(param_name):
-        #     p.name = param_name
-    
-    if "primary_key" in constraints:
-        constraints.add("unique")
-        if "nullable" in constraints:
-            constraints.remove("nullable")
-        if not validate_primary_key_dtType(param_dt):
-            raise Exception({"error": "primary key data type must be text string or integer"})
 
-    tableparam.constraints.clear()
-    for const in constraints:
-        if not validate_constraint(const):
-            raise Exception({"error": "invalid constraint"})
-        if const == "foreign_key":
-            fk_rf = param.get("foreign_key_rf") #expected format(api.table) 
-            if not fk_rf:
-                raise Exception({"error": "Expected a foreign key reference field."})
-            f_api, f_table = fk_rf.split(".")
-            r_api = Api.query.filter_by(name=f_api, user_id=user.id).first()
-            if not r_api:
-                raise Exception({"error": "Api name referenced in the foreign key doesn't exist"})
-            r_table = Table.query.filter_by(name=f_table, api_id=r_api.id).first()
-            if not r_table:
-                raise Exception({"error", "Table name referenced doesn't exist"})
-            # r_field = TableParameter.query.filter_by(name=field, table_id=r_table.id).first()
-            # if not r_field:
-            #     continue
-            foreign_key_ref_table = ForeignKeyFieldReferenceTable.query.filter_by(table_id=r_table.id).first()
-            tableparam.foreign_key_reference_id = foreign_key_ref_table.id
-        if const == "primary_key":
-            tableparam.primary_key = True
-            primary_key_present = True
-        
-        get_c = Constraint.query.filter_by(name=const).first()
-        if get_c:
-            tableparam.constraints.append(get_c)
-        else:
-            tableparam.constraints.append(Constraint(name=const))
-    return primary_key_present
+    return check_and_validate_tableparameter(table, tableparam, param, param_dt, param_default_value, constraints, user,entry_present, True)
 
 
 def delete_table_parameter(table_params):
@@ -214,7 +238,7 @@ def parse_and_create_tableparameters(table_parameters, new_table, user):
 
 
 
-def parse_and_update_tableparameters(table_parameters, table, user):
+def parse_and_update_tableparameters(table_parameters, table, user, entry_present):
     primary_key_present = False
 
     tableparam_names = set()
@@ -229,10 +253,10 @@ def parse_and_update_tableparameters(table_parameters, table, user):
 
             param_id = param.get("index")
             if param_id in existing_table_parameter_mapper:
-                is_primary_key = update_table_parameter(param, existing_table_parameter_mapper[param_id], tableparam_names, user)
+                is_primary_key = update_table_parameter(param, table, existing_table_parameter_mapper[param_id], tableparam_names, user, entry_present)
                 existing_table_parameter_mapper.pop(param_id)
             else:
-                is_primary_key = create_table_parameter(param, table, tableparam_names, user)
+                is_primary_key = create_table_parameter(param, table, tableparam_names, user, entry_present)
             if not primary_key_present:
                 primary_key_present = is_primary_key
         if not primary_key_present:

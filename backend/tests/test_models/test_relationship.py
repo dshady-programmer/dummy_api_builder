@@ -48,7 +48,7 @@ class TestTableParameter(TestConfig):
         self.Tb2_id = TableParameter(name="_id", table_id=self.table2.id, data_type="integer", primary_key=True)
         self.Tb2_title = TableParameter(name="title", table_id=self.table2.id, dataType_length=100, data_type="string")
         self.Tb2_content = TableParameter(name="content", table_id=self.table2.id, data_type="text")
-        self.Tb2_author = TableParameter(name="author", table_id=self.table2.id, foreign_key_reference_field="Blog.User") # foreign key, with the reference field referenceing the User table in the Blog api
+        self.Tb2_author = TableParameter(name="author", table_id=self.table2.id, foreign_key_reference_id=self.table1.reference.id) # foreign key, with the reference field referenceing the User table in the Blog api
         self.db.session.add_all([
             self.Tb_id,self.Tb_age, self.Tb_email, self.Tb_name, self.Tb_created, self.Tb_isStaff,
             self.Tb2_id, self.Tb2_title, self.Tb2_content, self.Tb2_author
@@ -104,7 +104,7 @@ class TestTableParameter(TestConfig):
             # fk_model_name is the query name for the foreign key data on the parent table. e.g user1.blog_posts 
 
             # Note: this feature is fully tested in the test_views package
-            rel = Relationship(entry_ref_pk="1", fk_rel="Blog.User->Blog.Post.author", fk_model_name="blog_posts")
+            rel = Relationship(entry_ref_pk="1", foreign_key_rel_id=self.table1.reference.id, child_table_id=self.tabl_entrylist_post1.table_id)
             rel.entrylists.append(self.tabl_entrylist_user1) # relationship has been created
             self.db.session.add(rel)
             self.db.session.commit()
@@ -113,9 +113,8 @@ class TestTableParameter(TestConfig):
             expected_parent = self.tabl_entrylist_user1
 
             p_id = rel.entry_ref_pk
-            p_api_name, p_table_name = rel.fk_rel.split('->')[0].split('.')
-            p_api = Api.query.filter_by(name=p_api_name, user_id=self.user1.id).first()
-            p_table = Table.query.filter_by(name=p_table_name, api_id=p_api.id).first()
+            p_table = rel.foreign_key_rel.table_reference
+
             parent_entrylist = EntryList.query.filter_by(primary_key_value=p_id, table_id=p_table.id).first()
 
             self.assertEqual(parent_entrylist, expected_parent)

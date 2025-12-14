@@ -23,6 +23,7 @@ parameter_constraints = db.Table('parameter_constraint',
 
 class DataTypes(enum.Enum):
     string = 'String'
+    decimal = 'Decimal'
     text = 'Text'
     integer = 'Integer'
     boolean = 'Boolean'
@@ -39,10 +40,8 @@ class TableParameter(db.Model):
     primary_key = db.Column(db.Boolean, default=False) 
     foreign_key_reference_id = db.Column(db.Integer, db.ForeignKey('foreignkeyfieldreferencetable.id'), nullable=True) 
     dataType_length = db.Column(db.Integer, nullable=True) # Only valid for strings, text, integers
+    default_value = db.Column(db.Text, nullable=True) # for default values
     table_id = db.Column(db.Integer, db.ForeignKey('table.id'))
     table = db.relationship('Table', back_populates='table_parameters')
     constraints = db.relationship('Constraint', secondary=parameter_constraints, backref='table_parameters', cascade="all, delete", passive_deletes=True)
     entries = db.relationship('Entry', back_populates='tableparameter', cascade="all, delete-orphan, delete")
-
-
-    # Add default values

@@ -29,6 +29,7 @@ from .utils.model_entry_utils import (
     update_entry
 ) 
 
+from .utils.parsers import parse_value
 
 
 @app_views.route('<api_token>/my_api/<api_name>/model/<model_name>', methods=["GET", "POST"])
@@ -129,7 +130,7 @@ def update_delete_retrieve_entry(api_token, api_name, model_name, model_id):
         data = {}
         for data_entry in e_list.entries:
             fieldName = data_entry.tableparameter.name
-            data[fieldName] = int(data_entry.value) if data_entry.tableparameter.data_type.name == "integer" else data_entry.value
+            data[fieldName] = parse_value(data_entry.tableparameter, data_entry.value)
         # rel_key = db.session(Relationship).filter(Relationship.fk_rel.like(f"{tableKeyName}%"), Relationship.entry_ref_pk=e_list.primary_key_value).first()
         rels = Relationship.query.filter_by(entry_ref_pk=e_list.primary_key_value, foreign_key_rel_id=fk_ref_table.id)
         rel_key_data = {} # format {"posts":[..]}
@@ -141,7 +142,7 @@ def update_delete_retrieve_entry(api_token, api_name, model_name, model_id):
             for e_list_rel in rel.entrylists:
                 rel_data = {}
                 for ent in e_list_rel.entries:
-                    rel_data[ent.tableparameter.name] = int(ent.value) if ent.tableparameter.data_type.name == "integer" else ent.value
+                    rel_data[ent.tableparameter.name] = parse_value(ent.tableparameter, ent.value)
                 rel_key_data[fk_rel_name].append(rel_data) # <api_name>_<model_name>s
         data["relationships"] = rel_key_data
         return jsonify(data), 200
