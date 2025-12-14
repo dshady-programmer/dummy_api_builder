@@ -137,9 +137,7 @@ def validate_entry_constraints(value, tbl_p):
       
         if not get_ref_table:
             return False, fk, "Reference table doesn't exist", default_value
-        print('got here', get_ref_table, fk)
         e_li = EntryList.query.filter_by(table_id=get_ref_table.table_id, primary_key_value = value).first()
-        print('e_li', e_li)
         if not e_li:
             return False, fk, f"Primary key '{value}' referenced for the foreign key doesn't exist on the parent table", default_value
     if "unique" in consts:
@@ -157,5 +155,88 @@ def validate_primary_key_dtType(data_type):
     return True
 
 
-def unique_constraints_validator():
-    pass
+def unique_constraints_validator(table_param, nullable=False):
+    entries = table_param.entries # get the entire column of existing values
+    existing_values = set() # take advantage of the set data type for average 0(1) lookup
+    for entry in entries:
+        # condition if it has a nullable flag and but 
+        condition = (entry.value and entry.value in existing_values)
+
+        if condition:
+            raise Exception({"error": "Failed unique constraints, more than one row with the same value"})
+        elif nullable and not entry.value:
+            continue
+        elif not nullable and not entry.value:
+            raise Exception({"error": "Found null values for a non-nullable column."})
+        existing_values.add(entry.value)
+    
+
+def foreign_key_constraints_validator(parent_table, table_param, nullable=False):
+    """
+    
+        Runs validation on all existing fields and ensure that they are valid keys
+
+    """
+    from models import EntryList
+    entries = table_param.entries
+    validated_keys = set()
+    for entry in entries:
+
+        condition = (entry.value and entry.value not in validated_keys)
+        if condition:
+            e_list = EntryList.query(table_id=parent_table.id, primary_key_value=entry.value).first()
+            if not e_list:
+                raise Exception({"error": "Failed foreign key constraints, one or more rows does not reference a valid pk value on the parent table "})
+        elif nullable and not entry.value:
+            continue
+        elif not nullable and not entry.value:
+            raise Exception({"error": "Found null values for a non-nullable column"})
+        
+        validated_keys.add(entry.value)
+        
+
+def foreign_key_ref_table_validator(table_param, param_dt, param):
+    
+    from models import Api, Table, ForeignKeyFieldReferenceTable
+
+    if not validate_primary_key_dtType(param_dt): # since foreign key would always reference a primary key of the parent table.. it should conform with the valid data types
+        # you can use of a foreign with the data type int, string or text. It doesn't have to tie strictly the parent table primary key field datatype
+        raise Exception({"error": "Foreign key data type must be either text, string or integer"})
+    fk_rf = param.get("foreign_key_rf") #expected format(api.table)
+    if not fk_rf:
+        raise Exception({"error": "Expected a foreign key reference field."})
+    f_api, f_table = fk_rf.split(".") # Check if the reference api and model are valid for it to be a foreign key field
+    r_api = Api.query.filter_by(name=f_api, user_id=user.id).first()
+    if not r_api:
+        raise Exception({"error": "Api name referenced in the foreign key doesn't exist"})
+    r_table = Table.query.filter_by(name=f_table, api_id=r_api.id).first()
+    if not r_table:
+        raise Exception({"error": "Table name referenced doesn't exist"})
+    foreign_key_ref_table = ForeignKeyFieldReferenceTable.query.filter_by(table_id=r_table.id).first()
+    table_param.foreign_key_reference_id = foreign_key_ref_table.id
+    return r_table
+
+def validate_foreign_key_default_value(
+        parent_table, table, table_param, 
+        default_value, entry_present, 
+        run_update, update
+    ):
+    from models import EntryList
+    from .model_entry_utils import (
+        create_default_value_entries, 
+        update_default_value_entries
+    )
+
+    if not default_value:
+        return 
+    e_list = EntryList.query(table_id=parent_table.id, primary_key_value=default_value).first()
+    if not e_list:
+        raise Exception({"error": "default value does not reference a valid primary key value on the parent table"})
+
+    if entry_present:
+        if not update:
+            create_default_value_entries(table, table_param, default_value)
+
+        elif update and run_update:
+            update_default_value_entries(table_param, default_value)
+            

@@ -275,3 +275,33 @@ def list_entries(args, table):
         return {"data": data}
     
 
+
+
+def create_null_value_entries(table, table_param):
+    entrylists = table.entry_lists
+
+
+    for entrylist in entrylists:
+        e = Entry()
+        table_param.entries.append(e)
+        entrylist.entries.append(e)
+
+def create_default_value_entries(table, table_param, default_value):
+    entrylists = table.entry_lists
+
+    for entrylist in entrylists:
+        e = Entry(value = default_value)
+        table_param.entries.append(e)
+        entrylist.entries.append(e)
+
+def update_default_value_entries(table_param, default_value):
+    #update the values that are null.. doesn't change previous values.
+    entries = table_param.entries
+    for entry in entries:
+        if not entry.value:
+            entry.value = default_value
+
+
+
+
+    
