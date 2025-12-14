@@ -104,8 +104,8 @@ def show_model(user, api_id, model_name):
             tbl_constraints.append(const.name.value)
         foreign_key_ref = None
         ref_table = params.foreign_key_reference_table
-        # if ref_table:
-        #     foreign_key_ref = f"{ref_table.table_reference.api.name}.{ref_table.table_reference.name}"
+        if ref_table:
+            foreign_key_ref = f"{ref_table.table_reference.api.name}.{ref_table.table_reference.name}"
         tbl_params.append({
             "index": params.id,
             "name": params.name,

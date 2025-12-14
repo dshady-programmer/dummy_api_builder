@@ -78,7 +78,7 @@ def add_list_entry(api_token, api_name, model_name):
     elif request.method == "GET":
         args = dict(request.args)
         response = list_entries(args, table)
-        if type(response) == dict:
+        if type(response) == dict and "error" in response:
             return jsonify(response), 400
 
         return jsonify(response), 200

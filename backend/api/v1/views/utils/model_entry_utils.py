@@ -49,7 +49,7 @@ def validate_create_update_entry_items(entry, parameters, e_list, table, primary
         tbl_p = parameters[entry_name]
         stat, const_type, err_msg, default_return_value = validate_entry_constraints(entry_value, tbl_p) # Validating the entry against the existing constraint
         if const_type == "default" and stat:
-            entry_value = tbl_p.default_value # set default value
+            entry_value = default_return_value # set default value
         elif const_type == "nullable" and stat:
             continue # waive null value for nullable constraints
 
@@ -86,7 +86,6 @@ def validate_create_update_entry_items(entry, parameters, e_list, table, primary
             e_list.entries.append(e)
         parameters.pop(entry_name) # remove already processed entry_name
         
-    
     if not primary_keys and not update:
         raise Exception({"error", "No primary key value"})
     if primary_keys:
@@ -157,6 +156,7 @@ def create_entry(table, entry, user, api_name):
 
         # after all the required parameters have been sorted
         # iterate over the remaining parameters and create an entry for them with null values and also ensure they do have nullable constraints on their respective fields (thus validating that non-nullable fields are indeed passed)
+
         for tb_param_name, tb_param  in parameters.items():
             tbl_constraints = [c.name.value for c in tb_param.constraints]
             if "nullable" in tbl_constraints or "default" in tbl_constraints:
@@ -193,7 +193,7 @@ def create_entry(table, entry, user, api_name):
     
     else:
         db.session.commit()
-        return {entry.tableparameter.name: entry.value for entry in e_list.entries} 
+        return {entry.tableparameter.name: parse_value(entry.tableparameter, entry.value) for entry in e_list.entries} 
 
 
 
@@ -233,7 +233,7 @@ def update_entry(entry, table, e_list, api_name, user):
     
     else:
         db.session.commit()
-        return {entry.tableparameter.name: entry.value for entry in e_list.entries} 
+        return {entry.tableparameter.name: parse_value(entry.tableparameter, entry.value) for entry in e_list.entries} 
 
 
 

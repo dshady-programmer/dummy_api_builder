@@ -112,6 +112,7 @@ def validate_entry_constraints(value, tbl_p):
         if c in consts:
             condition = (type(value) == str and not value) or (type(value) != bool and not value)
             if condition and c == "default":
+
                 if tbl_p.primary_key:
                     # auto generate keys for primary keys
                     default_value = autogenerate_keys(tbl_p)
@@ -121,6 +122,8 @@ def validate_entry_constraints(value, tbl_p):
                     fk = "default_fk"
                     default_value = str(value)
                     break
+                else:
+                    default_value = str(tbl_p.default_value)
             if condition:
                 return True, c, None, default_value
         
@@ -184,7 +187,7 @@ def foreign_key_constraints_validator(parent_table, table_param, nullable=False)
 
         condition = (entry.value and entry.value not in validated_keys)
         if condition:
-            e_list = EntryList.query(table_id=parent_table.id, primary_key_value=entry.value).first()
+            e_list = EntryList.query.filter_by(table_id=parent_table.id, primary_key_value=entry.value).first()
             if not e_list:
                 raise Exception({"error": "Failed foreign key constraints, one or more rows does not reference a valid pk value on the parent table "})
         elif nullable and not entry.value:
@@ -195,7 +198,7 @@ def foreign_key_constraints_validator(parent_table, table_param, nullable=False)
         validated_keys.add(entry.value)
         
 
-def foreign_key_ref_table_validator(table_param, param_dt, param):
+def foreign_key_ref_table_validator(table_param, param_dt, param, user):
     
     from models import Api, Table, ForeignKeyFieldReferenceTable
 
@@ -229,9 +232,10 @@ def validate_foreign_key_default_value(
 
     if not default_value:
         return 
-    e_list = EntryList.query(table_id=parent_table.id, primary_key_value=default_value).first()
+
+    e_list = EntryList.query.filter_by(table_id=parent_table.id, primary_key_value=default_value).first()
     if not e_list:
-        raise Exception({"error": "default value does not reference a valid primary key value on the parent table"})
+        raise Exception({"error": "FK default value does not reference a valid primary key value on the parent table"})
 
     if entry_present:
         if not update:

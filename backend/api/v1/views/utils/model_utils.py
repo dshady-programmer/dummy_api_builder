@@ -37,7 +37,7 @@ def table_parameter_constraints_checks(table, table_param, param_dt, param_dt_le
         if entry_present and update and "primary_key" in prev_constraints:
             raise Exception({"error": "Can't remove an existing primary key field from a table with already existing data."})
         table_param.primary_key = False
-       
+    
         
         if update and entry_present and "unique" in constraints and "unique" not in prev_constraints:
             # only check unique constraints on existing table fields if the unique constraint wasn't present in previous constraints set
@@ -48,7 +48,7 @@ def table_parameter_constraints_checks(table, table_param, param_dt, param_dt_le
             else:
                 unique_constraints_validator(table_param)        
 
-        elif not update and "unique" in constraints and entry_present:
+        elif entry_present and not update and ("nullable" not in constraints or "default" not in constraints or "unique" in constraints):
             constraints.add("nullable")
             # create entries to add the null values
 
@@ -57,17 +57,21 @@ def table_parameter_constraints_checks(table, table_param, param_dt, param_dt_le
                 constraints.add("nullable")
 
         # run the foreign key validation check
-        if not update and "nullable" in constraints and "default" not in constraints:
+        if entry_present and not update and "nullable" in constraints and "default" not in constraints:
             # check if only nullable is present 
             # create entries if it's not update
             create_null_value_entries(table, table_param)
+        
+
 
 
     if "default" in constraints:
 
-        if not param_default_value:
-            raise Exception({'error': 'Default constraint requires a default value to be provided'})
+        
         if "primary_key" not in constraints:
+            if not param_default_value:
+                raise Exception({'error': 'Default constraint requires a default value to be provided'})
+           
             # if it has a unique constraint and not a primary key constraint raise an error
             if "unique" in constraints:
                 constraints.remove("unique")
@@ -101,7 +105,11 @@ def table_parameter_constraints_checks(table, table_param, param_dt, param_dt_le
 
 
 
-def check_and_validate_tableparameter(table, table_param, param, param_dt, param_dt_length, param_default_value, constraints, user, entry_present, update=False):
+def check_and_validate_tableparameter(
+        table, table_param, param, param_dt, param_dt_length, 
+        param_default_value, constraints, user, entry_present, update=False
+    ):
+
     primary_key_present = False
     prev_constraints = None
     if update:
@@ -126,7 +134,7 @@ def check_and_validate_tableparameter(table, table_param, param, param_dt, param
             # Check if the constraints are valid
             raise Exception({"error": "invalid constraint"})
         if const == "foreign_key":
-            parent_table = foreign_key_ref_table_validator(table_param, param_dt, param)
+            parent_table = foreign_key_ref_table_validator(table_param, param_dt, param, user)
             run_update = True
 
             if entry_present and update:
@@ -272,13 +280,15 @@ def parse_and_create_tableparameters(table_parameters, new_table, user):
     tableparam_names = set()
     try:
         for param in table_parameters:
-           is_primary_key = create_table_parameter(param, new_table, tableparam_names, user)
+           is_primary_key = create_table_parameter(param, new_table, tableparam_names, user, False)
            if not primary_key_present:
                primary_key_present = is_primary_key
         if not primary_key_present:
             raise Exception({"error": "Table must contain atleast one primary key"})
     except Exception as e:
-        # print(e)
+        print(e)
+        import traceback
+        traceback.print_exc()
         error = e.args[0]
         db.session.rollback()
         if type(error) == dict and "error" in error:
@@ -319,6 +329,8 @@ def parse_and_update_tableparameters(table_parameters, table, user, entry_presen
         delete_table_parameter(existing_table_parameter_mapper)
     except Exception as e:
         print(e)
+        import traceback
+        traceback.print_exc()
         error = e.args[0]
         db.session.rollback()
         if type(error) == dict and "error" in error:
