@@ -1,9 +1,25 @@
-from models import TableParameter,Api, Table,Constraint, Relationship, ForeignKeyFieldReferenceTable, db
-from .validate import validate_constraint, validate_dtType, validate_name, validate_primary_key_dtType, validate_entry_value, validate_entry_value_length
+from models import TableParameter,Api, Entry, Table,Constraint, Relationship, ForeignKeyFieldReferenceTable, db
+from .validate import (
+    validate_constraint, validate_dtType, 
+    validate_name, validate_primary_key_dtType, 
+    validate_entry_value, validate_entry_value_length,
+    unique_constraints_validator, foreign_key_ref_table_validator,
+    validate_foreign_key_default_value,
+    foreign_key_constraints_validator
+)
+
+from .model_entry_utils import (
+    create_null_value_entries, 
+    create_default_value_entries, 
+    update_default_value_entries
+)
 
 
 
-def table_parameter_constraints_checks(table, table_param, constraints, entry_present, prev_constraints, update):
+
+
+
+def table_parameter_constraints_checks(table, table_param, param_dt, param_dt_length, constraints, entry_present, param_default_value, prev_constraints, update):
     
     
     if "primary_key" in constraints:
@@ -27,40 +43,56 @@ def table_parameter_constraints_checks(table, table_param, constraints, entry_pr
             # only check unique constraints on existing table fields if the unique constraint wasn't present in previous constraints set
             # validate all entries in the table and ensure the field existing values are unique if it fails raise and error
             # check for nullable constraints is also done to allow exempt null values from unique constraint check 
-            pass 
-            
+            if "nullable" in constraints:
+                unique_constraints_validator(table_param, True)
+            else:
+                unique_constraints_validator(table_param)        
 
         elif not update and "unique" in constraints and entry_present:
             constraints.add("nullable")
             # create entries to add the null values
 
-        if entry_present and "foreign_key" in constraints and "default" not in constraints:
-            constraints.add("nullable")
-        # run the foreign key validation check 
+        if entry_present and "foreign_key" in constraints:
+            if "default" not in constraints:
+                constraints.add("nullable")
 
-        # check if only nullable is present 
-        # create entries if it's not update
+        # run the foreign key validation check
+        if not update and "nullable" in constraints and "default" not in constraints:
+            # check if only nullable is present 
+            # create entries if it's not update
+            create_null_value_entries(table, table_param)
+
 
     if "default" in constraints:
+
+        if not param_default_value:
+            raise Exception({'error': 'Default constraint requires a default value to be provided'})
         if "primary_key" not in constraints:
             # if it has a unique constraint and not a primary key constraint raise an error
             if "unique" in constraints:
                 constraints.remove("unique")
-            else:
+            if "foreign_key" not in constraints:
+                """ for foreign keys validate that the default value provided is a valid primary key"""
                 if not validate_entry_value(param_default_value, param_dt):
                     raise Exception({"error": "Wrong data type passed for default value"})
-                if not validate_entry_value_length():
+                if not validate_entry_value_length(param_default_value, param_dt, param_dt_length):
                     raise Exception({"error": "Default values must obey max length restriction"})
+                if entry_present:
+                    if not update:
+                        create_default_value_entries(table, table_param, param_default_value)
+                    else:
+                        update_default_value_entries(table_param, param_default_value)
                 table_param.default_value = param_default_value
+
         else:
             # if it has primary key then the backend auto generates keys
-
             if "foreign_key" in constraints:
                 # default, primary_key and foreign key constraints can't coexist (primary_key + default autogenerates unique values can cause unintended values with foreign key)
                 raise Exception({"error": "A default primary key field can't also have a foreign key constraint"})
         
         # for update: update the existing entries to reflect the default value if not already existing (latest default value) 
         # create entries with the latest default values.
+        
     
 
 
@@ -69,14 +101,20 @@ def table_parameter_constraints_checks(table, table_param, constraints, entry_pr
 
 
 
-
-def check_and_validate_tableparameter(table, table_param, param, param_dt, param_default_value, constraints, user, entry_present, update=False):
+def check_and_validate_tableparameter(table, table_param, param, param_dt, param_dt_length, param_default_value, constraints, user, entry_present, update=False):
     primary_key_present = False
     prev_constraints = None
     if update:
+        prev_default_value = table_param.default_value
         prev_constraints = [c.name.value for c in table_param.constraints]
     
-    table_parameter_constraints_checks(table, table_param, constraints, entry_present, prev_constraints, update)
+    table_parameter_constraints_checks(
+        table, table_param,
+        param_dt, param_dt_length,
+        constraints, 
+        entry_present, param_default_value, 
+        prev_constraints, update
+    )
            
         
     if update:
@@ -88,22 +126,26 @@ def check_and_validate_tableparameter(table, table_param, param, param_dt, param
             # Check if the constraints are valid
             raise Exception({"error": "invalid constraint"})
         if const == "foreign_key":
+            parent_table = foreign_key_ref_table_validator(table_param, param_dt, param)
+            run_update = True
 
-            if not validate_primary_key_dtType(param_dt): # since foreign key would always reference a primary key of the parent table.. it should conform with the valid data types
-                # you can use of a foreign with the data type int, string or text. It doesn't have to tie strictly the parent table primary key field datatype
-                raise Exception({"error": "Foreign key data type must be either text, string or integer"})
-            fk_rf = param.get("foreign_key_rf") #expected format(api.table)
-            if not fk_rf:
-                raise Exception({"error": "Expected a foreign key reference field."})
-            f_api, f_table = fk_rf.split(".") # Check if the reference api and model are valid for it to be a foreign key field
-            r_api = Api.query.filter_by(name=f_api, user_id=user.id).first()
-            if not r_api:
-                raise Exception({"error": "Api name referenced in the foreign key doesn't exist"})
-            r_table = Table.query.filter_by(name=f_table, api_id=r_api.id).first()
-            if not r_table:
-                raise Exception({"error": "Table name referenced doesn't exist"})
-            foreign_key_ref_table = ForeignKeyFieldReferenceTable.query.filter_by(table_id=r_table.id).first()
-            table_param.foreign_key_reference_id = foreign_key_ref_table.id
+            if entry_present and update:
+                if prev_constraints and "foreign_key" in prev_constraints:
+                    if "default" in constraints:
+                        if prev_default_value and prev_default_value == param_default_value:
+                            run_update = False 
+                    else:
+                        run_update = False
+                else:
+                    foreign_key_constraints_validator(parent_table, table_param, "nullable" in constraints)
+            
+            
+            validate_foreign_key_default_value(
+                parent_table, table, 
+                table_param, param_default_value, 
+                entry_present, run_update, update
+            )
+
         if const == "primary_key":
             primary_key_present = True
             table_param.primary_key = True
@@ -165,7 +207,13 @@ def create_table_parameter(param, table, tableparam_names, user, entry_present):
     # keep track of the param_name to avoid duplication later along the line
     tableparam_names.add(param_name)
 
-    return check_and_validate_tableparameter(table, p, param, param_dt, param_default_value, constraints, user, entry_present)
+    return check_and_validate_tableparameter(
+                table, p, param, param_dt, 
+                param_dt_length,
+                param_default_value, constraints, 
+                user, 
+                entry_present
+            )
 
 
 def update_table_parameter(param,table, tableparam, tableparam_names, user, entry_present):
@@ -199,7 +247,13 @@ def update_table_parameter(param,table, tableparam, tableparam_names, user, entr
         tableparam.dataType_length = None
             
 
-    return check_and_validate_tableparameter(table, tableparam, param, param_dt, param_default_value, constraints, user,entry_present, True)
+    return check_and_validate_tableparameter(
+            table, tableparam, param, param_dt,
+            param_dt_length, 
+            param_default_value, constraints, 
+            user, 
+            entry_present, True
+        )
 
 
 def delete_table_parameter(table_params):
