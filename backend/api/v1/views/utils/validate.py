@@ -84,7 +84,6 @@ def validate_entry_value(value, data_type):
     elif data_type == "datetime":
         try:
             eval_value = parse(value)
-            print(eval_value)
             assert(type(eval_value) == datetime.datetime)
         except:
             return False

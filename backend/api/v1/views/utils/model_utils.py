@@ -19,7 +19,12 @@ from .model_entry_utils import (
 
 
 
-def table_parameter_constraints_checks(table, table_param, param_dt, param_dt_length, constraints, entry_present, param_default_value, prev_constraints, update):
+def table_parameter_constraints_checks(
+        table, table_param, param_dt, 
+        param_dt_length, constraints, 
+        entry_present, param_default_value, 
+        prev_constraints, update
+    ):
     
     
     if "primary_key" in constraints:

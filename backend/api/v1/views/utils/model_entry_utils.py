@@ -107,7 +107,7 @@ def validate_create_update_entry_items(entry, parameters, e_list, table, primary
 
 
 
-def create_entry(table, entry, user, api_name):
+def create_entry(table, entry):
     
     try:
         if type(entry) != dict:
@@ -196,7 +196,7 @@ def create_entry(table, entry, user, api_name):
 
 
 
-def update_entry(entry, table, e_list, api_name, user):
+def update_entry(entry, table, e_list):
     try:
 
         if type(entry) != dict:

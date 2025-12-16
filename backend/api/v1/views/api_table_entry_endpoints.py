@@ -50,14 +50,14 @@ def add_list_entry(api_token, api_name, model_name):
             return jsonify({"error": "Entries must be an object or a an array of objects"}), 400
         # This logic would be refactored. 
         if type(entries) == dict:
-            response = create_entry(table, entries, user, api_name)
+            response = create_entry(table, entries)
             if 'error' in response:
                 return jsonify(response), 400
             return jsonify(response), 200
         else:
             responses = []
             for entry in entries:
-                response = create_entry(table, entry, user, api_name)
+                response = create_entry(table, entry)
                 if 'error' in response:
                     return jsonify({
                             "status": "error",
@@ -106,7 +106,7 @@ def update_delete_retrieve_entry(api_token, api_name, model_name, model_id):
         if type(entries) != dict:
             return jsonify({"error": "Entries must be an object"}), 400
 
-        response = update_entry(entries, table, e_list, api.name, user)
+        response = update_entry(entries, table, e_list)
         if "error" in response:
             return jsonify(response), 400            
         return jsonify(response), 200

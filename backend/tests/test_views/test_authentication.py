@@ -343,7 +343,7 @@ class TestLoginRequiredAndUserDetails(TestConfig):
         expected_err_msg = "invalid credentials, please log in or create an account"
         res = self.client.get(self.endpoint, headers={'x-access-token': dummy_jwt()})
         self.assertEqual(res.status_code, 401)
-        print("user detail with wrong token", res.json['error'])
+        # print("user detail with wrong token", res.json['error'])
         self.assertEqual(res.json["error"], expected_err_msg)
 
     
