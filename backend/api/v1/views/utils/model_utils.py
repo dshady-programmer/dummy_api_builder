@@ -286,9 +286,9 @@ def parse_and_create_tableparameters(table_parameters, new_table, user):
         if not primary_key_present:
             raise Exception({"error": "Table must contain atleast one primary key"})
     except Exception as e:
-        print(e)
-        import traceback
-        traceback.print_exc()
+        # print(e)
+        # import traceback
+        # traceback.print_exc()
         error = e.args[0]
         db.session.rollback()
         if type(error) == dict and "error" in error:
@@ -328,9 +328,9 @@ def parse_and_update_tableparameters(table_parameters, table, user, entry_presen
         
         delete_table_parameter(existing_table_parameter_mapper)
     except Exception as e:
-        print(e)
-        import traceback
-        traceback.print_exc()
+        # print(e)
+        # import traceback
+        # traceback.print_exc()
         error = e.args[0]
         db.session.rollback()
         if type(error) == dict and "error" in error:

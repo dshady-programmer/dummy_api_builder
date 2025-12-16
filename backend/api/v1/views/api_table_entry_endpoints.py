@@ -80,7 +80,6 @@ def add_list_entry(api_token, api_name, model_name):
         response = list_entries(args, table)
         if type(response) == dict and "error" in response:
             return jsonify(response), 400
-
         return jsonify(response), 200
 
 
@@ -105,7 +104,7 @@ def update_delete_retrieve_entry(api_token, api_name, model_name, model_id):
         data = request.get_json()
         entries = data.get("entries") or {}
         if type(entries) != dict:
-            return jsonify({"error": "Entries must be an object"})
+            return jsonify({"error": "Entries must be an object"}), 400
 
         response = update_entry(entries, table, e_list, api.name, user)
         if "error" in response:
@@ -116,7 +115,7 @@ def update_delete_retrieve_entry(api_token, api_name, model_name, model_id):
 
     fk_ref_table = ForeignKeyFieldReferenceTable.query.filter_by(table_id=table.id).first() # to grab reference tables incase of foreign key relationships 
     if request.method == "DELETE":
-        Entry.query.filter_by(entry_list_id=e_list.id).delete()
+        entries = Entry.query.filter_by(entry_list_id=e_list.id).delete()
         rels = Relationship.query.filter_by(entry_ref_pk=e_list.primary_key_value, foreign_key_rel_id=fk_ref_table.id)
         for r in rels:
             r.entrylists.clear()

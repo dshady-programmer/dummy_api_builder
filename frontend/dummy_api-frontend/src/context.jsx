@@ -15,6 +15,7 @@ const AppProvider = ({ children }) => {
     const [apiDetail, setApiDetail] = React.useState(null)
 
 
+
     const fetchApiDetail = async (apiId) => {
         const token = Cookies.get('token', { path: '/' })
         setLoading(true)
@@ -29,7 +30,12 @@ const AppProvider = ({ children }) => {
 
                 setApiDetail(data)
             } else {
+                if (response.status === 401) {
+                    Cookies.remove("token", { path: '/' })
+                }
                 setApiDetail(null)
+
+                
             }
         } catch (err) {
             console.log("error fetching api detail", err)
@@ -51,7 +57,14 @@ const AppProvider = ({ children }) => {
             });
             const data = await response.json();
             if (response.status === 200) setApis(data)
-            else setApis(null)
+            else {
+                if (response.status === 401) {
+                    Cookies.remove("token", { path: '/' })
+                }
+                setApis(null)
+
+                
+            }
         } catch (err) {
             console.log("error fetchin apis", err)
             setApis(null)
@@ -73,7 +86,13 @@ const AppProvider = ({ children }) => {
             });
             const data = await response.json();
             if (response.status === 200) setUser(data)
-            else setUser(null)
+            else {
+                if (response.status === 401) {
+                    Cookies.remove("token", { path: '/' })
+                }
+                setUser(null)
+                
+            }
         } catch (err) {
             console.log('error fetching user', err)
             setUser(null)
@@ -94,7 +113,14 @@ const AppProvider = ({ children }) => {
             });
             const data = await response.json();
             if (response.status === 200) setModel(data)
-            else setModel(null)
+            else {
+
+                if (response.status === 401) {
+                    Cookies.remove("token", { path: '/' })
+                } 
+                setModel(null)
+
+            }
         } catch (err) {
             console.log('error fetching model', err)
             setModel(null)

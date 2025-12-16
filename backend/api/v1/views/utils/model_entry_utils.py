@@ -87,7 +87,7 @@ def validate_create_update_entry_items(entry, parameters, e_list, table, primary
         parameters.pop(entry_name) # remove already processed entry_name
         
     if not primary_keys and not update:
-        raise Exception({"error", "No primary key value"})
+        raise Exception({"error": "No primary key value"})
     if primary_keys:
         # Merge all the primary keys to form the main primary key for the field.
         primary_keys_sorted = sorted(primary_keys, key=lambda x: x["id"])
@@ -156,7 +156,6 @@ def create_entry(table, entry, user, api_name):
 
         # after all the required parameters have been sorted
         # iterate over the remaining parameters and create an entry for them with null values and also ensure they do have nullable constraints on their respective fields (thus validating that non-nullable fields are indeed passed)
-
         for tb_param_name, tb_param  in parameters.items():
             tbl_constraints = [c.name.value for c in tb_param.constraints]
             if "nullable" in tbl_constraints or "default" in tbl_constraints:
@@ -174,7 +173,7 @@ def create_entry(table, entry, user, api_name):
         
 
     except Exception as e:
-        print(e)
+        # print(e)
         error = e.args[0]
         db.session.rollback()
         if type(error) == dict:
@@ -214,7 +213,7 @@ def update_entry(entry, table, e_list, api_name, user):
         validate_create_update_entry_items(entry, parameters, e_list, table, primary_key_fields, True)      
 
     except Exception as e:
-        print(e)
+        # print(e)
         error = e.args[0]
         db.session.rollback()
         if type(error) == dict:
@@ -263,13 +262,13 @@ def list_entries(args, table):
                 if filter_in:
                     data.append(entry_data)
             if found_valid_arg:
-                return data
+                return {"data": data}
         data = []
         for entry_list in table.entry_lists:
             if entry_list.entries:
                 data.append({entry.tableparameter.name: parse_value(entry.tableparameter, entry.value) for entry in entry_list.entries})
     except Exception as e:
-        print(e)
+        # print(e)
         return {"error": "Something went wrong"} 
     else:
         return {"data": data}

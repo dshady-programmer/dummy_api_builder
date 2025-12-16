@@ -25,6 +25,7 @@ def create_model(user, api_id):
     name = data.get('name')
     description = data.get('description')
     table_parameters = data.get('tbl_params') or []
+
     # Atleast one table parameter is required
     # Tableparameter refers to the model fields (like name = string() etc..)
     # table_parameters would contain a list of dictionaries defining the attribute for the model
@@ -135,7 +136,7 @@ def delete_model(user, api_id, model_name):
     tbl_ps = t.table_parameters
     for tp in tbl_ps:
         tp.constraints.clear()
-    db.session.delete(t.reference)
+    # db.session.delete(t.reference)
     db.session.delete(t)
 
     db.session.commit()

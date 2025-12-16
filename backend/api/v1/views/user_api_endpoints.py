@@ -97,10 +97,10 @@ def update_api_info(user, id):
 @app_views.route('/delete_api/<id>', methods=['DELETE'])
 @login_required
 def delete_api(user, id):
-    api = Api.query.filter_by(id=id, user_id=user.id)
-    if not api.first():
+    api = Api.query.filter_by(id=id, user_id=user.id).first()
+    if not api:
         return jsonify({"error": "api doesn't exist"}), 400
     # Table.query.filter_by(api_id=api.first().id).delete()
-    api.delete()
+    db.session.delete(api)
     db.session.commit()
     return jsonify(''), 204

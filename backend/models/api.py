@@ -11,4 +11,4 @@ class Api(db.Model):
     description = db.Column(db.Text)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     user = db.relationship('User', back_populates='user_apis')
-    tables = db.relationship('Table', back_populates='api', cascade='all, delete-orphan, delete')
+    tables = db.relationship('Table', back_populates='api', cascade='all, delete')

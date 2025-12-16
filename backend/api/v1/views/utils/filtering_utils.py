@@ -40,7 +40,7 @@ def filter_validation(tp_name, datatype, value, check_value):
             if datatype == "integer":
                 return  int(check_value) <= int(value)
             if datatype in ["date", "datetime"]:
-                return parse(value) <= parse(check_value)
+                return parse(check_value) <= parse(value)
         elif tp_name.endswith("__startswith"):
             if datatype in ["text", "string"]:
                 return str(value).startswith(str(check_value))

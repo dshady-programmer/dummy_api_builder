@@ -53,10 +53,11 @@ def validate_dtType(type):
 
 
 def validate_name(name):
+
     import keyword
     if not name:
         return False
-    if len(name) < 3 or type(name) != str:
+    if type(name) != str or len(name) < 3:
         return False
     return name.isidentifier() and not keyword.iskeyword(name)
 
@@ -236,7 +237,7 @@ def validate_foreign_key_default_value(
     e_list = EntryList.query.filter_by(table_id=parent_table.id, primary_key_value=default_value).first()
     if not e_list:
         raise Exception({"error": "FK default value does not reference a valid primary key value on the parent table"})
-
+    table_param.default_value = default_value
     if entry_present:
         if not update:
             create_default_value_entries(table, table_param, default_value)
