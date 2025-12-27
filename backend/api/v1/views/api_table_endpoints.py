@@ -6,7 +6,7 @@ tables/model in an api
 from api.v1.views import app_views
 from flask import request, jsonify
 from api.v1.auth.auth import login_required
-from models import db, Api, Table
+from models import db, Api, Table, Relationship
 from .utils.validate import validate_name
 from .utils.model_utils import parse_and_create_tableparameters, parse_and_update_tableparameters
 
@@ -89,6 +89,8 @@ def update_model(user, api_id, model_name):
     return jsonify(response), 200
 
 
+
+
 @app_views.route('/my_api/<api_id>/show_model/<model_name>', methods=["GET"])
 @login_required
 def show_model(user, api_id, model_name):
@@ -141,4 +143,28 @@ def delete_model(user, api_id, model_name):
 
     db.session.commit()
     
+    return jsonify(''), 204
+
+
+
+
+@app_views.route('/my_api/<api_id>/truncate_model/<model_name>', methods=["DELETE"])
+@login_required
+def truncate_model(user, api_id, model_name):
+    api = Api.query.filter_by(id=api_id, user_id=user.id).first()
+    if not api:
+        return jsonify({"error": "no api of such is associated to the user"}),400
+    t = Table.query.filter_by(name=model_name, api_id=api_id).first()
+
+    entrylists = t.entry_lists
+    for e_list in entrylists:
+        db.session.delete(e_list)
+
+    rels = Relationship.query.filter_by(foreign_key_rel_id=t.reference.id)
+    for r in rels:
+        r.entrylists.clear()
+        db.session.delete(r)
+
+    db.session.commit()
+
     return jsonify(''), 204

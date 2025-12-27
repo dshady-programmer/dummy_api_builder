@@ -15,10 +15,41 @@ const Index = () => {
     const apiId = params.apiId
     const modelName = params.modelName
 
+    const deleteModel = async () => {
+        const confirmDelete = confirm("Are you sure you want to delete this model? This action cannot be undone.")
+        if (!confirmDelete) return;
+        const res = await fetch(`${hostUrl}/api/v1/my_api/${params.apiId}/delete_model/${params.modelName}`, {
+                        method: "DELETE",
+                        headers: {
+                            "Content-Type": "application/json",
+                            "x-access-token": token
+                        },
+                    })
+        if (res.status === 204) {
+            alert("Model deleted successfully")
+        }
+                    
+        navigate(`/my_apis/${params.apiId}`)
 
+    }
+    const truncateTable = async () => {
+        const confirmTruncate = confirm("Are you sure you want to truncate this model's table? This means all data in the table will be permanently deleted. This action cannot be undone.")
+        if (!confirmTruncate) return;
+        const res = await fetch(`${hostUrl}/api/v1/my_api/${params.apiId}/truncate_model/${params.modelName}`, {
+                        method: "DELETE",   
+                        headers: {
+                            "Content-Type": "application/json",
+                            "x-access-token": token
+                        }, 
+                    })
+        if (res.status === 204) {
+            alert("Model table truncated successfully")
+        }
+    }
     useEffect(() => {
         fetchModel(apiId, modelName)
     }, [apiId, modelName])
+
 
     if (loading) {
         return <div className="loading-wrapper">
@@ -82,21 +113,8 @@ const Index = () => {
                     </section>
                     <section className="modelPage_btns">
                         <button onClick={() => navigate('edit')}>Edit Model</button>
-                        <button style={{ backgroundColor: "red" }} onClick={async () => {
-                            const res = await fetch(`${hostUrl}/api/v1/my_api/${params.apiId}/delete_model/${params.modelName}`, {
-                                method: "DELETE",
-                                headers: {
-                                    "Content-Type": "application/json",
-                                    "x-access-token": token
-                                },
-                            })
-                            if (res.status === 204) {
-                                alert("Model deleted successfully")
-                            }
-                            
-                            navigate(`/my_apis/${params.apiId}`)
-
-                        }}>Delete Model</button>
+                        <button style={{ backgroundColor: "red" }} onClick={truncateTable}>Truncate Table</button>
+                        <button style={{ backgroundColor: "red" }} onClick={deleteModel}>Delete Model</button>
                     </section>
                 </>
             }

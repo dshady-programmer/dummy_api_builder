@@ -12,6 +12,22 @@ const Index = () => {
     const params = useParams()
     const navigate = useNavigate();
     const { setInvalidate, loading, fetchApiDetail, apiDetail } = useContext(AppContext)
+    const deleteAPI = async () => {
+        const confirmDelete = confirm("Are you sure you want to delete this API? This action cannot be undone.")
+        if (!confirmDelete) return;
+        const res = await fetch(`${hostUrl}/api/v1/delete_api/${params.apiId}`, {
+                                    method: "DELETE",
+                                    headers: {
+                                        "Content-Type": "application/json",
+                                        "x-access-token": token
+                                    },
+                                })
+        if (res.status === 204) {
+            setInvalidate(true)
+        } 
+        navigate('/my_apis')
+    }
+
 
     useEffect(() => {
         fetchApiDetail(params.apiId)
@@ -59,20 +75,7 @@ const Index = () => {
                             <button onClick={() => navigate('edit')}>
                                 Edit API
                             </button>
-                            <button style={{ backgroundColor: 'red' }} onClick={async () => {
-                                const res = await fetch(`${hostUrl}/api/v1/delete_api/${params.apiId}`, {
-                                    method: "DELETE",
-                                    headers: {
-                                        "Content-Type": "application/json",
-                                        "x-access-token": token
-                                    },
-                                })
-                                if (res.status === 204) {
-                                    setInvalidate(true)
-                                } 
-                                navigate('/my_apis')
-                                
-                            }}>
+                            <button style={{ backgroundColor: 'red' }} onClick={deleteAPI}>
                                 Delete API
                             </button>
                             <button onClick={() => navigate("/my_apis/test_endpoint")}>
