@@ -5,6 +5,7 @@ import { Outlet, useLocation, useParams } from "react-router-dom"
 import { useEffect, useContext } from "react"
 import { AppContext } from "../../context"
 
+
 const Index = () => {
     const { fetchApis, user, fetchUser, apis, invalidate, setInvalidate } = useContext(AppContext)
     const location = useLocation();
@@ -39,15 +40,17 @@ const Index = () => {
         }
     }, [invalidate, apis])
     return (
-        <div>
-            <Header navs={navs} activeNav={activeNav} type="apis" />
-            <section className="my_api_body">
-                <Sidebar createApiPage={createApiPage} activeID={params?.apiId} my_api_page={my_api_page} />
-                <div className={`api_info_body ${my_api_page && "hide_on_smalldevice"}`}>
-                    <Outlet />
-                </div>
-            </section>
-        </div>
+    
+            <div>
+                <Header navs={navs} activeNav={activeNav} type="apis" />
+                <section className="my_api_body">
+                    <Sidebar createApiPage={createApiPage} activeID={params?.apiId} my_api_page={my_api_page} />
+                    <div className={`api_info_body ${my_api_page && "hide_on_smalldevice"}`}>
+                        <Outlet />
+                    </div>
+                </section>
+            </div>
+        
     )
 }
 

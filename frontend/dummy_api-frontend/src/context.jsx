@@ -1,6 +1,7 @@
 import React from "react"
 import Cookies from "js-cookie";
 import { hostUrl } from "./variables";
+import { useNavigate } from "react-router-dom";
 
 export const AppContext = React.createContext();
 
@@ -13,6 +14,7 @@ const AppProvider = ({ children }) => {
     const [userLoading, setUserLoading] = React.useState(false)
     const [invalidate, setInvalidate] = React.useState(false)
     const [apiDetail, setApiDetail] = React.useState(null)
+    const navigate = useNavigate();
 
 
 
@@ -30,10 +32,12 @@ const AppProvider = ({ children }) => {
 
                 setApiDetail(data)
             } else {
+                setApiDetail(null)
+
                 if (response.status === 401) {
                     Cookies.remove("token", { path: '/' })
+                    navigate("/login", { replace: true, state: { path: location.pathname } })
                 }
-                setApiDetail(null)
 
                 
             }
@@ -58,10 +62,12 @@ const AppProvider = ({ children }) => {
             const data = await response.json();
             if (response.status === 200) setApis(data)
             else {
+                setApis(null)
+
                 if (response.status === 401) {
                     Cookies.remove("token", { path: '/' })
+                    navigate("/login", { replace: true, state: { path: location.pathname } })
                 }
-                setApis(null)
 
                 
             }
@@ -87,10 +93,12 @@ const AppProvider = ({ children }) => {
             const data = await response.json();
             if (response.status === 200) setUser(data)
             else {
+                setUser(null)
+
                 if (response.status === 401) {
                     Cookies.remove("token", { path: '/' })
+                    navigate("/login", { replace: true, state: { path: location.pathname } })
                 }
-                setUser(null)
                 
             }
         } catch (err) {
@@ -114,11 +122,12 @@ const AppProvider = ({ children }) => {
             const data = await response.json();
             if (response.status === 200) setModel(data)
             else {
+                setModel(null)
 
                 if (response.status === 401) {
                     Cookies.remove("token", { path: '/' })
+                    navigate("/login", { replace: true, state: { path: location.pathname } })
                 } 
-                setModel(null)
 
             }
         } catch (err) {

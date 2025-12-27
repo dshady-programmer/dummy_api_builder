@@ -39,6 +39,10 @@ const Index = ({ title, nameValue, descValue, buttonTitle, endpoint, method }) =
             })
 
             const data = await res.json()
+            if (res.status === 401) {
+                Cookies.remove("token", { path: '/' })
+                navigate("/login", { replace: true, state: { path: location.pathname } })
+            }
             if (res.status !== 200 && data.error) {
                 setState({ type: "error", message: data.error })
             } else if (res.status === 200) {

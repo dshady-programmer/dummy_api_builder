@@ -1,7 +1,10 @@
 import "./index.scss"
-import { useState, useContext } from "react"
+import { useState, useContext, useCallback } from "react"
 import { endpointPrefix } from "../../variables";
 import { AppContext } from "../../context";
+import CodeMirror from '@uiw/react-codemirror';
+import {json} from "@codemirror/lang-json"
+// import {javascript} from "@codemirror/lang-javascript"
 
 // hostUrl / api / v1 / <your_api_Id>/my_api/<Api_name>/model/<Model_name>/<optional:model_id></optional:model_id>
 
@@ -35,10 +38,15 @@ const Index = () => {
     const handleChange = (e) => {
         setEndpointParam(prev => ({ ...prev, [e.target.name]: e.target.name === "data" ? e.target.value : e.target.value.trim() }))
     }
+    const handleDataChange = useCallback((val, viewUpdate) => {
+
+        setEndpointParam(prev => ({ ...prev, data: val.trim() }));
+    }, []);
 
     const handleSubmit = async (e) => {
 
         e.preventDefault()
+        console.log("endpointParam", endpointParam)
         setResponse(null)
         if (!endpointParam.api || !endpointParam.model) {
             return;
@@ -133,11 +141,15 @@ const Index = () => {
                     </div>
                     <div>
                         <label htmlFor="data">Data</label>
-                        <textarea name="data" id="data" onChange={handleChange} value={endpointParam.data}></textarea>
+                        <CodeMirror name="data" id="data" value={endpointParam.data} height="200px" extensions={[json()]} onChange={handleDataChange} />
+                        {/* <textarea name="data" id="data" onChange={handleChange} value={endpointParam.data}></textarea> */}
+
                     </div>
+
                     <button>Send</button>
                 </form>
             </section>
+
             {
                 response && <section className="response_section">
                     <h2>Response</h2>

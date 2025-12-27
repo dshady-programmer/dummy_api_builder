@@ -61,7 +61,7 @@ div.test_endpoint-wrapper {
             gap: 1rem;
             color: $primary_color;
 
-            div {
+            &>div {
                 display: flex;
                 gap: 1rem;
                 width: 100%;
@@ -73,7 +73,8 @@ div.test_endpoint-wrapper {
 
                 input,
                 select,
-                textarea {
+                textarea,
+                  &>div{
                     flex-basis: 67%;
                     padding: 0.2rem 0.4rem;
                     border: 1px solid $primary_color;
@@ -97,8 +98,15 @@ div.test_endpoint-wrapper {
                     }
                 }
 
-                textarea {
-                    min-height: 10rem;
+                &>div {
+                    padding: 0;
+                
+                    .cm-editor {
+                        // padding: 0.2rem 0.4rem;
+                       
+                        font-size: 0.45rem;
+
+                    }
                 }
             }
 
@@ -126,15 +134,13 @@ div.test_endpoint-wrapper {
             top: 1rem;
             bottom: 1rem;
         }
-
-        ;
-
+        width: 100%;
         h2 {
             font-size: 1rem;
             color: $primary_color;
         }
 
-        div {
+        .response_data {
             padding: 2rem;
             border: 1px solid $primary_color;
             border-radius: 4px;
@@ -142,8 +148,11 @@ div.test_endpoint-wrapper {
             font-size: 0.5rem;
             line-height: 1rem;
             font-family: monospace;
-            width: 100%;
+            width: 90%;
+            height: 500px;
             overflow-x: auto;
+            overflow-y: auto;
+            
         }
     }
 }

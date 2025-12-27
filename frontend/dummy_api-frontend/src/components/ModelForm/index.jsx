@@ -78,6 +78,10 @@ const Index = ({ fList, mParam, endpoint, title, btnTitle, method }) => {
             if (res.status == 200) {
                 navigate(`/my_apis/${params.apiId}/model/${data.name}`)
             } else {
+                if (res.status == 401) {
+                    Cookies.remove("token", { path: '/' })
+                    navigate("/login", { replace: true, state: { path: location.pathname } })
+                }
                 setState({ type: "error", message: data.error || "Couldn't complete the request" })
             }
         } catch (err) {

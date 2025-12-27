@@ -25,6 +25,8 @@ section.about-section {
             background-color: $primary_color;
             display: flex;
             flex-direction: column;
+            justify-content: center;
+            align-items: center;
 
 
 
@@ -39,7 +41,7 @@ section.about-section {
             p {
                 flex-basis: 70%;
                 padding-top: 1rem;
-                font-size: 0.78rem;
+                font-size: 0.7rem;
                 font-weight: 350;
                 color: darken(white, 2%);
             }

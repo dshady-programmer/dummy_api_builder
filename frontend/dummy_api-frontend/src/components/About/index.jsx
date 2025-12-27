@@ -7,7 +7,7 @@ const index = () => {
                 <article>
                     <h2>Easily Create API</h2>
                     <p>
-                        With our powerful web application, you'll effortlessly create APIs in no time, empowering you to perform essential CRUD operations (Create, Retrieve, Update, Delete) on your data.
+                        With this powerful web application, you'll effortlessly create APIs in no time, empowering you to perform essential CRUD operations (Create, Retrieve, Update, Delete) on your data.
                     </p>
                 </article>
                 <article>

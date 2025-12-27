@@ -3,13 +3,12 @@ import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
 import Login from './pages/Login'
 import Register from './pages/Register'
-import MyApi from './pages/MyApi'
+import Root from './pages/root.jsx'
 import CreateAPI from "./pages/CreateAPI"
 import MyApiDetail from "./pages/MyApiDetail"
 import ModelPage from "./pages/ModelPage"
 import CreateModel from "./pages/CreateModel"
 import RedirectPage from './components/RedirectPage.jsx'
-import AppProvider from './context.jsx';
 import HomePage from "./pages/HomePage"
 import EditApiPage from "./pages/EditApiPage"
 import EditModel from "./pages/EditModel"
@@ -39,39 +38,39 @@ const router = createBrowserRouter([
   },
   {
     path: '/my_apis',
-    element: <RequireAuth><MyApi /></RequireAuth>,
+    element: <RequireAuth><Root /></RequireAuth>,
     children: [
       {
         path: "",
-        element: <HomePage />
+        element: <RequireAuth><HomePage /></RequireAuth>
       },
       {
         path: "test_endpoint",
-        element: <TestEndpoint />
+        element: <RequireAuth><TestEndpoint /></RequireAuth>
       },
       {
         path: ":apiId",
-        element: <MyApiDetail />
+        element: <RequireAuth><MyApiDetail /></RequireAuth>
       },
       {
         path: "create",
-        element: <CreateAPI />
+        element: <RequireAuth><CreateAPI /></RequireAuth>
       },
       {
         path: ":apiId/edit",
-        element: <EditApiPage />
+        element: <RequireAuth><EditApiPage /></RequireAuth>
       },
       {
         path: ":apiId/model/create",
-        element: <CreateModel />
+        element: <RequireAuth><CreateModel /></RequireAuth>
       },
       {
         path: ":apiId/model/:modelName",
-        element: <ModelPage />
+        element: <RequireAuth><ModelPage /></RequireAuth>
       },
       {
         path: ":apiId/model/:modelName/edit",
-        element: <EditModel />
+        element: <RequireAuth><EditModel /></RequireAuth>
       }
 
     ]
@@ -81,8 +80,6 @@ const router = createBrowserRouter([
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <AppProvider>
       <RouterProvider router={router} />
-    </AppProvider>
   </React.StrictMode>,
 )

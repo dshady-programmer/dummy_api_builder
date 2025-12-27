@@ -8,7 +8,8 @@ import { useContext, useState } from 'react'
 import { AppContext } from '../../context'
 import Cookies from 'js-cookie'
 const Index = ({ navs, activeNav, type }) => {
-    const { user } = useContext(AppContext);
+    const context = useContext(AppContext);
+    const user = context?.user;
     const [openUserInfo, setOpenUserInfo] = useState(false)
     const [openNav, setOpenNav] = useState(false)
 
@@ -20,6 +21,7 @@ const Index = ({ navs, activeNav, type }) => {
             return document.execCommand('copy', true, text);
         }
     }
+
     return (
         <header>
             <div>
@@ -52,7 +54,7 @@ const Index = ({ navs, activeNav, type }) => {
                                     }>copy</span></p>
                                     <button onClick={() => {
                                         Cookies.remove("token", { path: '/' })
-                                        navigate('/login')
+                                        navigate('/login', { replace: true})
                                     }}>Log out</button>
                                 </div>
                             }
