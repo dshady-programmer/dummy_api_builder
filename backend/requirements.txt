@@ -5,3 +5,4 @@ python-dotenv
 python-dateutil
 flask-cors
 Flask-Migrate
+bleach>=6.0.0

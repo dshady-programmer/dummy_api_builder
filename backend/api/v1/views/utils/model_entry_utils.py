@@ -3,7 +3,7 @@ from models import db, Entry, EntryList, Relationship
 from .validate import validate_entry_constraints, validate_entry_value, validate_entry_value_length
 from dateutil.parser import parse
 from .filtering_utils import query_filter
-from .parsers import parse_value
+from .parsers import parse_value, html_clean_value
 
 def datetime_repr(entry_value, type):
     if type == "datetime":
@@ -69,11 +69,11 @@ def validate_create_update_entry_items(entry, parameters, e_list, table, primary
             
             if not validate_entry_value_length(entry_value, tbl_p.data_type.name, tbl_p.dataType_length):
                 raise Exception({"error": f"max length of '{entry_name}' exceeded"})
+        entry_value = html_clean_value(entry_value) # clean html value to avoid xss attacks
         if tbl_p.primary_key:
             primary_keys.append({"id": tbl_p.id, "value": entry_value})
         if tbl_p.data_type.name == "datetime" or tbl_p.data_type.name == "date":
             entry_value = datetime_repr(entry_value, tbl_p.data_type.name)
-        
         e = None
         if update:
             e = Entry.query.filter_by(tableparameter_id=tbl_p.id, entry_list_id=e_list.id).first() # Grab the entry to be updated

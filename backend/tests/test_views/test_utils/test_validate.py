@@ -117,6 +117,7 @@ class TestValidateEntryValue(unittest.TestCase):
         self.assertTrue(validate_entry_value("123", "integer"))
         self.assertTrue(validate_entry_value("0", "integer"))
         self.assertTrue(validate_entry_value("-456", "integer"))
+
     
     def test_validate_entry_value_integer_invalid(self):
         """Test validation of invalid integer values"""
@@ -124,6 +125,7 @@ class TestValidateEntryValue(unittest.TestCase):
         self.assertFalse(validate_entry_value("abc", "integer"))
         self.assertFalse(validate_entry_value("", "integer"))
         self.assertFalse(validate_entry_value(None, "integer"))
+        self.assertFalse(validate_entry_value("print('Hacked!')", "integer"))
     
     def test_validate_entry_value_boolean_valid(self):
         """Test validation of valid boolean values"""
@@ -137,6 +139,7 @@ class TestValidateEntryValue(unittest.TestCase):
         self.assertFalse(validate_entry_value("1", "boolean"))
         self.assertFalse(validate_entry_value("yes", "boolean"))
         self.assertFalse(validate_entry_value("", "boolean"))
+        self.assertFalse(validate_entry_value("print('Hacked!')", "boolean"))
     
     def test_validate_entry_value_date_valid(self):
         """Test validation of valid date values"""

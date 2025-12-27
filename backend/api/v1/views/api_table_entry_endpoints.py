@@ -4,10 +4,8 @@ e.g name="peter"
 age=12
 etc..
 """
-from dateutil.parser import parse
 from api.v1.views import app_views
 from flask import request, jsonify, make_response
-from api.v1.auth.auth import login_required
 from models import (
     Api,
     Table,
@@ -17,12 +15,7 @@ from models import (
     Relationship,
     ForeignKeyFieldReferenceTable, db
 )
-from .utils.validate import (
 
-    validate_entry_constraints, 
-    validate_entry_value_length, 
-    validate_entry_value
-)
 from .utils.model_entry_utils import (
     create_entry, 
     list_entries, 

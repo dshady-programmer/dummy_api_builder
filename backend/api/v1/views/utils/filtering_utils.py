@@ -1,4 +1,5 @@
 from dateutil.parser import parse 
+from ast import literal_eval
 
 def filter_suffixes(tp_name):
     VALID_FILTER_SUFFIXES = [
@@ -66,8 +67,8 @@ def filter_validation(tp_name, datatype, value, check_value):
             
         else:
             if datatype == "boolean":
-                ev_check_val = eval(check_value)
-                ev_val = eval(value)
+                ev_check_val = literal_eval(check_value)
+                ev_val = literal_eval(value)
                 if type(ev_check_val) == bool and type(ev_val) == bool:
                     return ev_val == ev_check_val
             elif datatype == "integer":

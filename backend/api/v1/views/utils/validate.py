@@ -2,6 +2,7 @@
 This module contains series
 of validation check helper functions.
 """
+from ast import literal_eval
 
 
 def autogenerate_keys(tb_param):
@@ -71,13 +72,13 @@ def validate_entry_value(value, data_type):
     value = str(value)
     if data_type == "integer":
         try:
-            eval_value = eval(value)
+            eval_value = literal_eval(value)
             assert(type(eval_value) == int)
         except:
             return False
     elif data_type == "boolean":
         try:
-            eval_value = eval(value)
+            eval_value = literal_eval(value)
             assert(type(eval_value) == bool)
         except:
             return False

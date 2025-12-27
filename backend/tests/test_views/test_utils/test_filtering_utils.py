@@ -237,6 +237,14 @@ class TestFilterValidation(unittest.TestCase):
         result = filter_validation("description__like", "text", "Long description text", "description")
         self.assertTrue(result)
 
+    def test_filter_validation_boolean_with_malicious_input(self):
+        """Test boolean filter with malicious input"""
+        result1 = filter_validation("active", "boolean", "print('Hacked!')", "print('Hacked!')")
+        result2 = filter_validation("active", "boolean", "__import__('os').system('ls')", "__import__('os').system('ls')")
+        self.assertFalse(result1)
+        self.assertFalse(result2)
+
+    
 
 class TestQueryFilter(unittest.TestCase):
     """Test query_filter function"""
@@ -310,5 +318,7 @@ class TestQueryFilter(unittest.TestCase):
         # Should preserve found=True even though name not in args
         self.assertTrue(found)
         self.assertTrue(filter_in)
+
+
 
 

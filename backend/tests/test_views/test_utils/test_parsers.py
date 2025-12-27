@@ -111,6 +111,15 @@ class TestParseValue(TestConfig):
             result = parse_value(tb_param, "False")
             self.assertEqual(result, False)
             self.assertIsInstance(result, bool)
+
+    def test_parse_value_boolean_with_malicious_input(self):
+        """Test parsing boolean data value with malicious input"""
+        with self.app.app_context():
+            tb_param = TableParameter.query.filter_by(name="active").first()
+            
+            result = parse_value(tb_param, "__import__('os').system('ls')")
+            self.assertEqual(result, None)
+            self.assertNotIsInstance(result, bool)
     
     def test_parse_value_date(self):
         """Test parsing date values"""

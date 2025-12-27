@@ -13,6 +13,7 @@ from .model_entry_utils import (
     create_default_value_entries, 
     update_default_value_entries
 )
+from .parsers import html_clean_value
 
 
 
@@ -117,6 +118,8 @@ def check_and_validate_tableparameter(
 
     primary_key_present = False
     prev_constraints = None
+    if param_default_value is not None:
+        param_default_value = html_clean_value(param_default_value)
     if update:
         prev_default_value = table_param.default_value
         prev_constraints = [c.name.value for c in table_param.constraints]
