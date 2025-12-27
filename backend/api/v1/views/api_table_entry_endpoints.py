@@ -39,6 +39,11 @@ def add_list_entry(api_token, api_name, model_name):
     if request.method == "POST":
         data = request.get_json()
         entries = data.get("entries")
+        csv_file = data.get("csv_file")
+        if csv_file:
+            entries, error = csv_file_parser(csv_file)
+            if error:
+                return jsonify({"error": error}), 400
         
         if type(entries) not in [list, dict]: 
             return jsonify({"error": "Entries must be an object or a an array of objects"}), 400
