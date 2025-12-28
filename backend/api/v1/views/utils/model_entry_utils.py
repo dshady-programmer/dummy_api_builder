@@ -56,6 +56,8 @@ def validate_create_update_entry_items(entry, parameters, e_list, table, primary
         if const_type == "non-nullable" and not stat: # passes empty string
             raise Exception({"error": err_msg}) 
         entry_value = str(entry_value) # convert to a string since all values are stored as text in the database.
+        if tbl_p.data_type.name == "boolean":
+            entry_value = entry_value.capitalize() # ensure boolean values are capitalized for literal eval to work properly
         if const_type == "fk" or const_type == "default_fk":
             if const_type == "default_fk":
                 entry_value = default_return_value
@@ -238,16 +240,41 @@ def update_entry(entry, table, e_list):
 
 
 
-
+def return_entry_data(page, size, offset, runningSize, runningOffset, data):
+    if page:
+        has_next = runningSize < 0
+        has_prev = page > 1
+        next_num = page + 1 if has_next else None
+        prev_num = (offset - runningOffset) / size if has_prev else None
+        total_data = len(data)
+        return {"data": data, "page": page, "has_next": has_next, "has_prev": has_prev, "next_page_num": next_num, "prev_page_num": prev_num, "total_entries": total_data}
+    return {"data": data}
 
 def list_entries(args, table):
-
+    page = None
+    size = 10
+    if "page" in args:
+        page = args.pop("page")
+        if "size" in args:
+            size = args.pop("size")
+    
     data = []
     try:
+        offset = 0
+        if page:
+            try:
+                page = int(page)
+                page = page if page > 0 else 1
+                size = int(size)
+                offset = (page - 1) * size
+            except:
+                return {"error": "page and size must be integers"}
 
         if args:
+            runningOffset = offset
+            runningSize = size
             found_valid_arg = False # if params passed in are valid or not
-            get_entryLists = EntryList.query.filter_by(table_id=table.id)
+            get_entryLists = table.entry_lists
             for entry_list in get_entryLists:
                 entry_data = {}
                 get_entries = entry_list.entries
@@ -255,23 +282,48 @@ def list_entries(args, table):
                 for entry in get_entries:
                     tp_name = entry.tableparameter.name
                     e_value = parse_value(entry.tableparameter, entry.value)
-                    if e_value:
+
+                    if e_value is not None:
                         found_valid_arg, filter_in = query_filter(tp_name, args, entry.tableparameter.data_type.name, entry.value, found_valid_arg, filter_in)
                         
                     entry_data[tp_name] = e_value
                 if filter_in:
+                    if page and runningOffset > 0:
+                        runningOffset -= 1
+                        continue
+                    if page and runningSize == 0:
+                        runningSize -= 1
+                        continue
+                    if page and runningSize < 0:
+                        break
                     data.append(entry_data)
+                    if page:
+                        runningSize -= 1
             if found_valid_arg:
-                return {"data": data}
+                return return_entry_data(page, size, offset, runningSize, runningOffset, data)
         data = []
+        runningOffset = offset
+        runningSize = size
+
         for entry_list in table.entry_lists:
             if entry_list.entries:
+                if page and runningOffset > 0:
+                    runningOffset -= 1
+                    continue
+                if page and runningSize == 0:
+                    runningSize -= 1
+                    continue
+                if page and runningSize < 0:
+                    break
                 data.append({entry.tableparameter.name: parse_value(entry.tableparameter, entry.value) for entry in entry_list.entries})
+                if page:
+                    runningSize -= 1
+
     except Exception as e:
-        # print(e)
+        print(e)
         return {"error": "Something went wrong"} 
     else:
-        return {"data": data}
+        return return_entry_data(page, size, offset, runningSize, runningOffset, data)
     
 
 
@@ -299,6 +351,9 @@ def update_default_value_entries(table_param, default_value):
     for entry in entries:
         if not entry.value:
             entry.value = default_value
+
+
+
 
 
 

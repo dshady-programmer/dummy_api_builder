@@ -100,11 +100,16 @@ div.test_endpoint-wrapper {
 
                 &>div {
                     padding: 0;
+                    div {
+                        @include scrollbar;
+                    }
                 
+
                     .cm-editor {
                         // padding: 0.2rem 0.4rem;
                        
                         font-size: 0.45rem;
+                        
 
                     }
                 }
@@ -152,6 +157,7 @@ div.test_endpoint-wrapper {
             height: 500px;
             overflow-x: auto;
             overflow-y: auto;
+            @include scrollbar;
             
         }
     }

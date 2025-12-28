@@ -18,7 +18,7 @@ def autogenerate_keys(tb_param):
         
         else:
             lowest_value = 1
-            value = secrets.randbelow(2001)
+            value = secrets.randbelow(2000001)
             if value < lowest_value:
                 continue
         e = Entry.query.filter_by(tableparameter_id=tb_param.id, value=value).first()
@@ -26,6 +26,17 @@ def autogenerate_keys(tb_param):
             break
 
     return value
+
+def retrieve_remaining_rows_limit(user):
+    from .constants import MAX_ROW_FOR_USER
+
+    apis = user.user_apis
+    total_rows = 0
+    for api in apis:
+        for table in api.tables:
+            total_rows += len(table.entry_lists)
+    remaining_rows = MAX_ROW_FOR_USER - total_rows
+    return remaining_rows
 
 def validate_constraint(constraint):
     valid_constraints = [

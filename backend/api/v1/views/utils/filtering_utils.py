@@ -67,7 +67,7 @@ def filter_validation(tp_name, datatype, value, check_value):
             
         else:
             if datatype == "boolean":
-                ev_check_val = literal_eval(check_value)
+                ev_check_val = literal_eval(check_value.capitalize())
                 ev_val = literal_eval(value)
                 if type(ev_check_val) == bool and type(ev_val) == bool:
                     return ev_val == ev_check_val
@@ -86,7 +86,9 @@ def query_filter(tp_name, args, datatype, value, found_valid_arg, filter_in):
     tp_names = filter_suffixes(tp_name)
 
     for name in tp_names:
+
         if name in args:
+
             found_valid_arg = True
             if not filter_validation(name, datatype, value, args[name]):
                 filter_in = False

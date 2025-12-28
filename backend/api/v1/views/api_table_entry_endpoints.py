@@ -21,8 +21,8 @@ from .utils.model_entry_utils import (
     list_entries, 
     update_entry
 ) 
-
-from .utils.parsers import parse_value
+from .utils.validate import retrieve_remaining_rows_limit
+from .utils.parsers import parse_value, csv_file_parser
 
 
 @app_views.route('<api_token>/my_api/<api_name>/model/<model_name>', methods=["GET", "POST"])
@@ -30,6 +30,10 @@ def add_list_entry(api_token, api_name, model_name):
     user = User.query.filter_by(api_token=api_token).first()
     if not user:
         return make_response("invalid token", 401)
+    remaining_rows = retrieve_remaining_rows_limit(user)
+    if remaining_rows <= 0:
+        return make_response("You have reached your maximum number of rows allowed.", 403)
+
     api = Api.query.filter_by(name=api_name, user_id=user.id).first()
     if not api:
         return make_response(f"{api_name} does not exists in the users catalog", 400)
@@ -37,17 +41,20 @@ def add_list_entry(api_token, api_name, model_name):
     if not table:
         return make_response(f"model {model_name} doesn't exist in the api", 400)
     if request.method == "POST":
-        data = request.get_json()
-        entries = data.get("entries")
-        csv_file = data.get("csv_file")
+    
+        csv_file = request.files.get("csv_file")
         if csv_file:
-            entries, error = csv_file_parser(csv_file)
+            delimiter = request.form.get("delimiter") or ","
+            entries, error = csv_file_parser(csv_file, table=table, remaining_rows=remaining_rows, delimiter=delimiter)
             if error:
                 return jsonify({"error": error}), 400
+        else:
+            data = request.get_json()
+            entries = data.get("entries")
         
         if type(entries) not in [list, dict]: 
             return jsonify({"error": "Entries must be an object or a an array of objects"}), 400
-        # This logic would be refactored. 
+
         if type(entries) == dict:
             response = create_entry(table, entries)
             if 'error' in response:
@@ -55,22 +62,29 @@ def add_list_entry(api_token, api_name, model_name):
             return jsonify(response), 200
         else:
             responses = []
+            if len(entries) > remaining_rows:
+                entries = entries[:remaining_rows]
             for entry in entries:
                 response = create_entry(table, entry)
+
                 if 'error' in response:
+                    stringified_key_entry = {str(k): v for k, v in entry.items()}
+
                     return jsonify({
                             "status": "error",
                             "error": {
-                                "entry": entry,
+                                "entry": stringified_key_entry,
                                 "response": response
                             },
-                            "successful_entries": responses
+                            "successful_entries": responses,
+                            "Number of entries added": len(responses)
                         }), 400
                 responses.append(response)
                 
             return jsonify({
                 "status": "success",
-                "results": responses
+                "results": responses,
+                "Number of entries added": len(responses)
             }), 200
 
                 

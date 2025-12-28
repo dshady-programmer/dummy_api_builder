@@ -120,6 +120,8 @@ def check_and_validate_tableparameter(
     prev_constraints = None
     if param_default_value is not None:
         param_default_value = html_clean_value(param_default_value)
+        if param_dt == "boolean":
+            param_default_value = param_default_value.capitalize() # ensure boolean values are capitalized for literal eval to work properly
     if update:
         prev_default_value = table_param.default_value
         prev_constraints = [c.name.value for c in table_param.constraints]

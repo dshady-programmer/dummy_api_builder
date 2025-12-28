@@ -206,19 +206,20 @@
 
 @mixin scrollbar {
     &::-webkit-scrollbar {
-        width: 10px;
+        width: 7px;
+        height: 7px;
     }
 
     /* Track */
     &::-webkit-scrollbar-track {
         background-color: darken($secondary_color, 5%);
-        border-radius: 7px;
+        border-radius: 5px;
     }
 
     /* Handle */
     &::-webkit-scrollbar-thumb {
         background-color: lighten($primary_color_light, 15%);
-        border-radius: 7px;
+        border-radius: 5px;
 
         &:hover {
             background-color: darken($primary_color, 5%);
