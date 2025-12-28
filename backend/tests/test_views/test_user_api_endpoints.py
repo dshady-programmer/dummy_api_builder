@@ -63,12 +63,18 @@ class TestMyApisList(TestUserApiEndpoints):
     
     def test_my_apis_with_existing_apis(self):
         """Test my_apis returns correct APIs for user"""
-        with self.app.app_context():
-            user = User.query.filter_by(email=self.user1_data["email"]).first()
-            api1 = Api(name="TestApi", description="Test API", user_id=user.id)
-            api2 = Api(name="AnotherApi", description="Another API", user_id=user.id)
-            self.db.session.add_all([api1, api2])
-            self.db.session.commit()
+        endpoint_url = "/api/v1/create_new_api"
+        data1 = {
+            "name": "TestApi",
+            "description": "Test API Description"
+        }
+        data2 = {
+            "name": "AnotherApi",
+            "description": "Another API Description"
+        }
+        self.client.post(endpoint_url, headers={'x-access-token':self.user1_token}, json=data1)
+        self.client.post(endpoint_url, headers={'x-access-token':self.user1_token}, json=data2)
+
         
         resp = self.client.get(self.endpoint, headers={'x-access-token': self.user1_token})
         self.assertEqual(resp.status_code, 200)
@@ -80,15 +86,20 @@ class TestMyApisList(TestUserApiEndpoints):
     
     def test_my_apis_isolation_between_users(self):
         """Test that users only see their own APIs"""
-        with self.app.app_context():
-            user1 = User.query.filter_by(email=self.user1_data["email"]).first()
-            user2 = User.query.filter_by(email=self.user2_data["email"]).first()
-            
-            api1 = Api(name="User1Api", description="User 1 API", user_id=user1.id)
-            api2 = Api(name="User2Api", description="User 2 API", user_id=user2.id)
-            self.db.session.add_all([api1, api2])
-            self.db.session.commit()
-        
+
+        endpoint_url = "/api/v1/create_new_api"
+        data1 = {
+            "name": "User1Api",
+            "description": "User 1 API"
+        }
+        data2 = {
+            "name": "User2Api",
+            "description": "User 2 API"
+        }
+        self.client.post(endpoint_url, headers={'x-access-token':self.user1_token}, json=data1)
+        self.client.post(endpoint_url, headers={'x-access-token':self.user2_token}, json=data2)
+
+
         resp1 = self.client.get(self.endpoint, headers={'x-access-token': self.user1_token})
         resp2 = self.client.get(self.endpoint, headers={'x-access-token': self.user2_token})
         
@@ -151,13 +162,22 @@ class TestMyApiDetail(TestUserApiEndpoints):
     
     def test_api_detail_with_tables(self):
         """Test API detail includes associated tables"""
-        with self.app.app_context():
-            api = self.db.session.get(Api, self.api_id)
-            table1 = Table(name="Users", description="Users table", api_id=api.id)
-            table2 = Table(name="Posts", description="Posts table", api_id=api.id)
-            self.db.session.add_all([table1, table2])
-            self.db.session.commit()
-        
+        url = f"/api/v1/my_api/{self.api_id}/create_model"
+        data1 = {
+            "name": "Users",
+            "description": "Users table",
+            "tbl_params": [{"name":"_id", "datatype": "integer", "constraints": ["primary_key"]}]
+
+        }
+        data2 = {
+            "name": "Posts",
+            "description": "Posts table",
+            "tbl_params": [{"name":"_id", "datatype": "integer", "constraints": ["primary_key"]}, {"name":"author_id", "datatype": "integer", "constraints": ["foreign_key"], "foreign_key_rf": f"{self.api.name}.Users"}]
+
+        }
+        self.client.post(url, headers={'x-access-token': self.user1_token}, json=data1)
+        self.client.post(url, headers={'x-access-token': self.user1_token}, json=data2)
+   
         resp = self.client.get(self.endpoint, headers={'x-access-token': self.user1_token})
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(len(resp.json["tables"]), 2)

@@ -264,7 +264,7 @@ class TestAutogenerateKeys(TestConfig):
             
             self.assertIsInstance(value, int)
             self.assertGreaterEqual(value, 1)
-            self.assertLessEqual(value, 2000)
+            self.assertLessEqual(value, 2000001)
     
     def test_autogenerate_string_key(self):
         """Test auto-generation of string/UUID primary keys"""

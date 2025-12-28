@@ -9,7 +9,7 @@ from api.v1.auth.auth import login_required
 from models import db, Api, Table, Relationship
 from .utils.validate import validate_name
 from .utils.model_utils import parse_and_create_tableparameters, parse_and_update_tableparameters
-
+from .utils.cache_utils import get_cache, set_cache, set_cache_model_details, invalidate_model_cache, invalidate_api_detail_cache
 
 
 """
@@ -50,6 +50,9 @@ def create_model(user, api_id):
     response = parse_and_create_tableparameters(table_parameters, new_table, user)
     if 'error' in response:
         return jsonify(response), 400
+    key2 = f"{user.id}-{api_id}-api-details"
+    invalidate_api_detail_cache(None, key2, api_id)
+
     return jsonify(response), 200
 
 
@@ -68,6 +71,7 @@ def update_model(user, api_id, model_name):
     table_parameters = data.get('tbl_params') or []
     api = Api.query.filter_by(id=api_id, user_id=user.id).first()
     entry_present = False
+    should_invalidate_api_detail = False
     if not api:
         return jsonify({"error": "no api of such is associated to the user"}), 400
     get_table = Table.query.filter_by(name=model_name, api_id=api_id).first()
@@ -79,13 +83,20 @@ def update_model(user, api_id, model_name):
         return jsonify({"error": "table_parameter must be a list"}), 400
     if name and validate_name(name):
         get_table.name = name
+        should_invalidate_api_detail = True
 
     if description:
         get_table.description = description
+        should_invalidate_api_detail = True
  
     response = parse_and_update_tableparameters(table_parameters, get_table, user, entry_present)
     if 'error' in response:
         return jsonify(response), 400
+    if should_invalidate_api_detail:
+        key2 = f"{user.id}-{api_id}-api-details"
+        invalidate_api_detail_cache(None, key2, api_id)
+    invalidate_model_cache(api_id, model_name)
+
     return jsonify(response), 200
 
 
@@ -94,6 +105,14 @@ def update_model(user, api_id, model_name):
 @app_views.route('/my_api/<api_id>/show_model/<model_name>', methods=["GET"])
 @login_required
 def show_model(user, api_id, model_name):
+    key = f"{user.id}-{api_id}-{model_name}-model_details"
+    no_of_entries_key = f"{api_id}:{model_name}:num_of_entries"
+    cache_num_of_entries = get_cache(no_of_entries_key)
+    cached_data = get_cache(key)
+    if cached_data is not None:
+        if cache_num_of_entries is not None and cache_num_of_entries != cached_data["number_of_entries"]:
+            cached_data['number_of_entries'] = cache_num_of_entries
+        return jsonify(cached_data), 200
     api = Api.query.filter_by(id=api_id, user_id=user.id).first()
     if not api:
         return jsonify({"error": "no api of such is associated to the user"}),400
@@ -120,14 +139,17 @@ def show_model(user, api_id, model_name):
             "constraints": tbl_constraints
         })
     
-    return jsonify({
+    data = {
         "id": get_table.id, 
         "name": get_table.name,
         "api_name": api.name,
         "number_of_entries": num_of_entries,
         "desc": get_table.description,
         "table_params": tbl_params
-        })
+        }
+    set_cache(no_of_entries_key, num_of_entries)
+    set_cache_model_details(key, data, api_id, model_name)
+    return jsonify(data), 200
 
 
 
@@ -145,6 +167,9 @@ def delete_model(user, api_id, model_name):
     db.session.delete(t)
 
     db.session.commit()
+    key2 = f"{user.id}-{api_id}-api-details"
+    invalidate_api_detail_cache(None, key2, api_id)
+    invalidate_model_cache(api_id, model_name)
     
     return jsonify(''), 204
 
@@ -169,6 +194,8 @@ def truncate_model(user, api_id, model_name):
         db.session.delete(r)
 
     db.session.commit()
+    no_of_entries_key = f"{api_id}:{model_name}:num_of_entries"
+    set_cache(no_of_entries_key, 0)
 
     return jsonify(''), 204
 
