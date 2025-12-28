@@ -101,6 +101,7 @@ def show_model(user, api_id, model_name):
     if not get_table:
         return jsonify({"error": "Table doesn't exist"}), 400
     tbl_params = []
+    num_of_entries = len(get_table.entry_lists)
     for params in get_table.table_parameters:
         tbl_constraints = []
         for const in params.constraints:
@@ -122,6 +123,8 @@ def show_model(user, api_id, model_name):
     return jsonify({
         "id": get_table.id, 
         "name": get_table.name,
+        "api_name": api.name,
+        "number_of_entries": num_of_entries,
         "desc": get_table.description,
         "table_params": tbl_params
         })
@@ -168,3 +171,4 @@ def truncate_model(user, api_id, model_name):
     db.session.commit()
 
     return jsonify(''), 204
+
