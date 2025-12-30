@@ -73,6 +73,12 @@ def set_cache_model_details(key, data, api_id, model_name, stored=False):
         api_model_key = f"model:{api_id}:{model_name}"
         api_keys = set(get_cache(api_id_key) or [])
         model_keys = set(get_cache(api_model_key) or [])
+        # print()
+        # print("api_id_ky", api_id_key)
+        # print("api_modl_ky", api_model_key)
+        # print("modl kys", model_keys)
+        # print("api kys", api_keys)
+        # print()
         model_keys.add(key)
         api_keys.add(key)
         set_cache(api_id_key, list(api_keys))
@@ -88,7 +94,14 @@ def invalidate_model_cache(api_id, model_name, cache_key = None):
         api_id_key = f"api:{api_id}"
         api_model_key = f"model:{api_id}:{model_name}"
         model_keys = get_cache(api_model_key) or []
+        
         api_keys = set(get_cache(api_id_key) or [])
+        # print()
+        # print("api_id_ky", api_id_key)
+        # print("api_modl_ky", api_model_key)
+        # print("modl kys", model_keys)
+        # print("api kys", api_keys)
+        # print()
         if cache_key is not None:
             if cache_key in model_keys:
                 model_keys.remove(cache_key)
@@ -108,14 +121,28 @@ def invalidate_model_cache(api_id, model_name, cache_key = None):
 
 
 def set_user_api_cache(key, data, parent_api_id, parent_model_name, child_models):
+    """
+    Cache model key and let child models keep track of them, so when a parent model is updated 
+    both the child and parent model data can be invalidated
+    """
+
     set_cache_model_details(key, data, parent_api_id, parent_model_name)
+
     for child_model in child_models:
-        child_model_api_id, child_model_name = child_model
+        child_model_api_id = child_model.api.id
+        child_model_name = child_model.name
         set_cache_model_details(key, data, child_model_api_id, child_model_name, True)
 
 def invalidate_user_cache_api(cache_key, parent_api_id, parent_model_name, child_models):
-    delete_cache(cache_key)
-    invalidate_model_cache(parent_api_id, parent_model_name, cache_key)
+    """
+    Invalidate model caches in the case of an update on model user entry data and let it ripple down to child models... 
+    to prevent showing stale data.
+
+    : note if parent model entry data is updated only the parent data would be deleted it won't affect the child 
+            This is because child model only references the primary key 
+    """
+    invalidate_model_cache(parent_api_id, parent_model_name)
     for child_model in child_models:
-        child_model_api_id, child_model_name = child_model
+        child_model_api_id = child_model.api.id
+        child_model_name = child_model.name
         invalidate_model_cache(child_model_api_id, child_model_name, cache_key)

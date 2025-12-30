@@ -4,6 +4,7 @@ from .validate import validate_entry_constraints, validate_entry_value, validate
 from dateutil.parser import parse
 from .filtering_utils import query_filter
 from .parsers import parse_value, html_clean_value
+from .cache_utils import invalidate_user_cache_api, get_cache, set_cache
 
 def datetime_repr(entry_value, type):
     if type == "datetime":
@@ -32,6 +33,8 @@ def validate_create_fk_relationships(tbl_p, entry_value, e_list, stat, err_msg):
             relationship = Relationship.query.filter_by(foreign_key_rel_id = rel_id, entry_ref_pk = entry_value, child_table_id=child_table_id).first() 
             if not relationship:
                 relationship = Relationship(entry_ref_pk=entry_value, foreign_key_rel_id=rel_id, child_table_id=child_table_id)
+                parent_table = tbl_p.foreign_key_reference_table.table_reference
+                invalidate_user_cache_api(None, parent_table.api_id, parent_table.name , []) # invalidate the parent table cache for new relationships.. (old relationships would already be tracked)
             relationship.entrylists.append(e_list)
             db.session.add(relationship)
         except:
@@ -51,11 +54,15 @@ def validate_create_update_entry_items(entry, parameters, e_list, table, primary
         if const_type == "default" and stat:
             entry_value = default_return_value # set default value
         elif const_type == "nullable" and stat:
-            continue # waive null value for nullable constraints
+            if not update:
+                continue # waive null value for nullable constraints
+
+            entry_value = default_return_value
 
         if const_type == "non-nullable" and not stat: # passes empty string
-            raise Exception({"error": err_msg}) 
-        entry_value = str(entry_value) # convert to a string since all values are stored as text in the database.
+            raise Exception({"error": err_msg})
+        
+        entry_value = str(entry_value) if entry_value is not None else entry_value # convert to a string since all values are stored as text in the database with the exception of None values which is acceptable for nullable fields (Note: this will only be triggered for "update" actions)
         if tbl_p.data_type.name == "boolean":
             entry_value = entry_value.capitalize() # ensure boolean values are capitalized for literal eval to work properly
         if const_type == "fk" or const_type == "default_fk":
@@ -66,16 +73,19 @@ def validate_create_update_entry_items(entry, parameters, e_list, table, primary
             if not stat and const_type == "uniq":
                 raise Exception({"error": err_msg})
 
-            if not validate_entry_value(entry_value, tbl_p.data_type.name):
+            if entry_value and not validate_entry_value(entry_value, tbl_p.data_type.name):
                 raise Exception({"error": "Wrong data type passed."})
             
-            if not validate_entry_value_length(entry_value, tbl_p.data_type.name, tbl_p.dataType_length):
+            if entry_value and not validate_entry_value_length(entry_value, tbl_p.data_type.name, tbl_p.dataType_length):
                 raise Exception({"error": f"max length of '{entry_name}' exceeded"})
-        entry_value = html_clean_value(entry_value) # clean html value to avoid xss attacks
+        entry_value = html_clean_value(entry_value) if entry_value is not None else entry_value # clean html value to avoid xss attacks with the exception of None values which is acceptable
         if tbl_p.primary_key:
+            if entry_value is None:
+                # Not technically going to reach this point just an extra / redundant safeguard incase of shortcomings
+                raise Exception({"error": "Primary key value can't be null"})
             primary_keys.append({"id": tbl_p.id, "value": entry_value})
         if tbl_p.data_type.name == "datetime" or tbl_p.data_type.name == "date":
-            entry_value = datetime_repr(entry_value, tbl_p.data_type.name)
+            entry_value = datetime_repr(entry_value, tbl_p.data_type.name) if entry_value is not None else entry_value
         e = None
         if update:
             e = Entry.query.filter_by(tableparameter_id=tbl_p.id, entry_list_id=e_list.id).first() # Grab the entry to be updated
@@ -102,6 +112,21 @@ def validate_create_update_entry_items(entry, parameters, e_list, table, primary
         # check if primary key already exists
         if EntryList.query.filter_by(table_id=table.id, primary_key_value=primary_key_value).first():
             raise Exception({"error": "Primary key already exist"})
+        
+        # Check if this primary key is already associated with a relationship
+        relationships = Relationship.query.filter_by(entry_ref_pk=e_list.primary_key_value, foreign_key_rel_id=table.reference.id)
+        for relationship in relationships:
+
+            rels = []
+            if relationship:
+                if len(relationship.entrylists):
+                    raise Exception({"error": "Primary key value is being used by other child table", "relationships": rels})
+                else:
+                    invalidate_user_cache_api(None, relationship.child_table.api.id, relationship.child_table.name, []) # invalidate any cache associated with the child table
+                    relationship.entrylists.clear()
+                    db.session.delete(relationship)
+                    rels.append(relationship)
+                
         e_list.primary_key_value = primary_key_value
 
 
@@ -215,7 +240,7 @@ def update_entry(entry, table, e_list):
         validate_create_update_entry_items(entry, parameters, e_list, table, primary_key_fields, True)      
 
     except Exception as e:
-        # print(e)
+        print(e)
         error = e.args[0]
         db.session.rollback()
         if type(error) == dict:
@@ -240,7 +265,7 @@ def update_entry(entry, table, e_list):
 
 
 
-def return_entry_data(page, size, offset, runningSize, runningOffset, data):
+def return_entry_data(page, size, offset, runningSize, runningOffset, data, list_cache_key, unfiltered = False):
     if page:
         has_next = runningSize < 0
         has_prev = page > 1
@@ -248,9 +273,13 @@ def return_entry_data(page, size, offset, runningSize, runningOffset, data):
         prev_num = (offset - runningOffset) / size if has_prev else None
         total_data = len(data)
         return {"data": data, "page": page, "has_next": has_next, "has_prev": has_prev, "next_page_num": next_num, "prev_page_num": prev_num, "total_entries": total_data}
+    if not page and unfiltered:
+        set_cache(list_cache_key, {"data": data})
+        pass
     return {"data": data}
 
-def list_entries(args, table):
+def list_entries(args, table, list_cache_key):
+    unfiltered = False
     page = None
     size = 10
     if "page" in args:
@@ -300,10 +329,18 @@ def list_entries(args, table):
                     if page:
                         runningSize -= 1
             if found_valid_arg:
-                return return_entry_data(page, size, offset, runningSize, runningOffset, data)
+                return return_entry_data(page, size, offset, runningSize, runningOffset, data, None)
         data = []
         runningOffset = offset
         runningSize = size
+        unfiltered = True
+
+        entrylists = get_cache(list_cache_key)
+        if entrylists:
+            return entrylists
+           
+        # if not page:
+
 
         for entry_list in table.entry_lists:
             if entry_list.entries:
@@ -323,7 +360,7 @@ def list_entries(args, table):
         print(e)
         return {"error": "Something went wrong"} 
     else:
-        return return_entry_data(page, size, offset, runningSize, runningOffset, data)
+        return return_entry_data(page, size, offset, runningSize, runningOffset, data, list_cache_key, unfiltered)
     
 
 

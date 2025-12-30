@@ -39,9 +39,6 @@ def add_list_entry(api_token, api_name, model_name):
     user = User.query.filter_by(api_token=api_token).first()
     if not user:
         return make_response("invalid token", 401)
-    remaining_rows = retrieve_remaining_rows_limit(user)
-    if remaining_rows <= 0:
-        return make_response("You have reached your maximum number of rows allowed.", 403)
 
     api = Api.query.filter_by(name=api_name, user_id=user.id).first()
     if not api:
@@ -49,8 +46,13 @@ def add_list_entry(api_token, api_name, model_name):
     table = Table.query.filter_by(name=model_name, api_id=api.id).first()
     if not table:
         return make_response(f"model {model_name} doesn't exist in the api", 400)
+    list_cache_key_format = "{api_token}-{api_name}-{model_name}-entries"
+    list_cache_key = list_cache_key_format.format(api_token=api_token, api_name=api_name, model_name=model_name)
     if request.method == "POST":
-    
+        remaining_rows = retrieve_remaining_rows_limit(user)
+        if remaining_rows <= 0:
+            return make_response("You have reached your maximum number of rows allowed.", 403)
+
         csv_file = request.files.get("csv_file")
         if csv_file:
             delimiter = request.form.get("delimiter") or ","
@@ -63,7 +65,7 @@ def add_list_entry(api_token, api_name, model_name):
         
         if type(entries) not in [list, dict]: 
             return jsonify({"error": "Entries must be an object or a an array of objects"}), 400
-        no_of_entries_key = f"{api.id}:{model_name}:num_of_entries"
+        no_of_entries_key = f"{user.id}:{api.id}:{model_name}:num_of_entries"
         prev_num = get_cache(no_of_entries_key)
 
 
@@ -108,8 +110,9 @@ def add_list_entry(api_token, api_name, model_name):
                 
     elif request.method == "GET":
         args = dict(request.args)
-        response = list_entries(args, table)
+        response = list_entries(args, table, list_cache_key)
         if type(response) == dict and "error" in response:
+            
             return jsonify(response), 400
         return jsonify(response), 200
 
@@ -117,11 +120,13 @@ def add_list_entry(api_token, api_name, model_name):
 
 @app_views.route('<api_token>/my_api/<api_name>/model/<model_name>/<model_id>', methods=["PUT", "GET", "DELETE"])
 def update_delete_retrieve_entry(api_token, api_name, model_name, model_id):
-    cache_key = f"{api_token}-{api_name}-{model_name}-{model_id}"
 
     user = User.query.filter_by(api_token=api_token).first()
     if not user:
         return make_response("invalid api id", 401)
+    
+    cache_key_format = "{api_token}-{api_name}-{model_name}-{model_id}"
+    cache_key = cache_key_format.format(api_token=api_token, api_name=api_name, model_name=model_name, model_id=model_id)
     api = Api.query.filter_by(name=api_name, user_id=user.id).first()
     if not api:
         return make_response(f"{api_name} does not exists in the users catalog", 400)
@@ -136,7 +141,7 @@ def update_delete_retrieve_entry(api_token, api_name, model_name, model_id):
     child_tables = []
     
     
-    fk_ref_table = ForeignKeyFieldReferenceTable.query.filter_by(table_id=table.id).first() # to grab reference tables incase of foreign key relationships 
+    fk_ref_table = table.reference # to grab reference tables incase of foreign key relationships 
     
     if request.method == "PUT":
         data = request.get_json()
@@ -149,7 +154,7 @@ def update_delete_retrieve_entry(api_token, api_name, model_name, model_id):
             return jsonify(response), 400         
         rels = Relationship.query.filter_by(entry_ref_pk=e_list.primary_key_value, foreign_key_rel_id=fk_ref_table.id)
         for r in rels:
-            child_tables.append((r.child_table.api.id, r.child_table.name))   
+            child_tables.append(r.child_table)   
         invalidate_user_cache_api(cache_key, api.id, table.name, child_tables)
         return jsonify(response), 200
     
@@ -159,7 +164,7 @@ def update_delete_retrieve_entry(api_token, api_name, model_name, model_id):
         entries = Entry.query.filter_by(entry_list_id=e_list.id).delete()
         rels = Relationship.query.filter_by(entry_ref_pk=e_list.primary_key_value, foreign_key_rel_id=fk_ref_table.id)
         for r in rels:
-            child_tables.append((r.child_table.api.id, r.child_table.name))
+            child_tables.append(r.child_table)
             r.entrylists.clear()
             db.session.delete(r)
         EntryList.query.filter_by(table_id = table.id, primary_key_value = model_id).delete()
@@ -171,6 +176,7 @@ def update_delete_retrieve_entry(api_token, api_name, model_name, model_id):
     if request.method == "GET":
         cached_data = get_cache(cache_key)
         if cached_data is not None:
+            # print(cached_data)
             return jsonify(cached_data)
         data = {}
         for data_entry in e_list.entries:
@@ -183,7 +189,7 @@ def update_delete_retrieve_entry(api_token, api_name, model_name, model_id):
 
         
         for rel in rels:
-            child_tables.append((rel.child_table.api.id, rel.child_table.name))
+            child_tables.append(rel.child_table)
             fk_rel_name = f"{rel.child_table.api.name.lower()}_{rel.child_table.name.lower()}s"
             rel_key_data[fk_rel_name] = []
             for e_list_rel in rel.entrylists:

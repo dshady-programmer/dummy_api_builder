@@ -106,7 +106,7 @@ def update_model(user, api_id, model_name):
 @login_required
 def show_model(user, api_id, model_name):
     key = f"{user.id}-{api_id}-{model_name}-model_details"
-    no_of_entries_key = f"{api_id}:{model_name}:num_of_entries"
+    no_of_entries_key = f"{user.id}:{api_id}:{model_name}:num_of_entries"
     cache_num_of_entries = get_cache(no_of_entries_key)
     cached_data = get_cache(key)
     if cached_data is not None:
@@ -194,7 +194,7 @@ def truncate_model(user, api_id, model_name):
         db.session.delete(r)
 
     db.session.commit()
-    no_of_entries_key = f"{api_id}:{model_name}:num_of_entries"
+    no_of_entries_key = f"{user.id}:{api_id}:{model_name}:num_of_entries"
     set_cache(no_of_entries_key, 0)
 
     return jsonify(''), 204
