@@ -1,9 +1,11 @@
 from extensions import cache
 import json
+import pickle
+import time
+from redis.exceptions import WatchError
 
 def get_cache(key):
     """Retrieve a value from the cache by its key."""
-
     data = cache.get(key)
     if data is not None:
         return json.loads(data)
@@ -14,10 +16,27 @@ def set_cache(key, value, timeout=60*60*24*7):
     cache.set(key, json.dumps(value), timeout=timeout)
 
 
+
+def set_raw_cache(key, value, timeout=60*60*24*7):
+    prefix = cache.cache._get_prefix()
+    prefixed_key = prefix+key
+    r = cache.cache._write_client
+    r.set(prefixed_key, json.dumps(value), ex=timeout)
+
+def get_raw_cache(key):
+    prefix = cache.cache._get_prefix()
+    prefixed_key = prefix+key
+    r = cache.cache._read_client
+    data = r.get(prefixed_key)
+    if data:
+        return json.loads(data)
+    return None
+
 def delete_cache(key):
     """Delete a value from the cache by its key."""
     if cache.get(key):
         cache.delete(key)   
+
 
 
 
@@ -146,3 +165,37 @@ def invalidate_user_cache_api(cache_key, parent_api_id, parent_model_name, child
         child_model_api_id = child_model.api.id
         child_model_name = child_model.name
         invalidate_model_cache(child_model_api_id, child_model_name, cache_key)
+
+
+
+LUA_APPEND_ENTRYLIST =  """
+    local raw = redis.call("GET", KEYS[1])
+    if not raw then
+        return nil
+    end
+
+    local entry_object = cjson.decode(raw)
+
+    for i = 1, #ARGV do
+        table.insert(entry_object.data, cjson.decode(ARGV[i]))
+    end
+
+    redis.call("SET", KEYS[1], cjson.encode(entry_object), "EX", 60*60*24*7)
+    return #entry_object
+"""
+
+
+def update_entry_list_cache_on_add_new_entries(entrylists_key, new_entries):
+    """ 
+     Update cached entry list when a new entry is added
+    """
+    prefix = cache.cache._get_prefix()
+    prefixed_key = prefix+entrylists_key
+    r = cache.cache._write_client
+    args = [json.dumps(e) for e in new_entries]
+    r.eval(LUA_APPEND_ENTRYLIST, 1, prefixed_key, *args)
+
+
+
+def set_entry_details(key, api_id, model_id):
+    pass

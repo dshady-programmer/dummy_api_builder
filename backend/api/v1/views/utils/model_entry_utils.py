@@ -4,7 +4,7 @@ from .validate import validate_entry_constraints, validate_entry_value, validate
 from dateutil.parser import parse
 from .filtering_utils import query_filter
 from .parsers import parse_value, html_clean_value
-from .cache_utils import invalidate_user_cache_api, get_cache, set_cache
+from .cache_utils import invalidate_user_cache_api, get_cache, set_cache, set_raw_cache, get_raw_cache
 
 def datetime_repr(entry_value, type):
     if type == "datetime":
@@ -200,7 +200,7 @@ def create_entry(table, entry):
         
 
     except Exception as e:
-        # print(e)
+        print(e)
         error = e.args[0]
         db.session.rollback()
         if type(error) == dict:
@@ -274,7 +274,7 @@ def return_entry_data(page, size, offset, runningSize, runningOffset, data, list
         total_data = len(data)
         return {"data": data, "page": page, "has_next": has_next, "has_prev": has_prev, "next_page_num": next_num, "prev_page_num": prev_num, "total_entries": total_data}
     if not page and unfiltered:
-        set_cache(list_cache_key, {"data": data})
+        set_raw_cache(list_cache_key, {"data": data})
         pass
     return {"data": data}
 
@@ -335,7 +335,7 @@ def list_entries(args, table, list_cache_key):
         runningSize = size
         unfiltered = True
 
-        entrylists = get_cache(list_cache_key)
+        entrylists = get_raw_cache(list_cache_key)
         if entrylists:
             return entrylists
            
@@ -381,6 +381,17 @@ def create_default_value_entries(table, table_param, default_value):
         e = Entry(value = default_value)
         table_param.entries.append(e)
         entrylist.entries.append(e)
+        try:
+            rel_id = table_param.foreign_key_reference_table.table_reference.table_id
+            relationship = Relationship.query.filter_by(foreign_key_rel_id = rel_id, entry_ref_pk = default_value, child_table_id=table_param.table_id).first() 
+            if not relationship:
+                relationship = Relationship(entry_ref_pk=default_value, foreign_key_rel_id=rel_id, child_table_id=table_param.table_id)
+            if entrylist not in relationship.entrylists:
+                relationship.entrylists.append(entrylist)
+                db.session.add(relationship)
+        except:
+            raise Exception({"error": "Could not reference the foreign key id while getting/creating relationship"})
+
 
 def update_default_value_entries(table_param, default_value):
     #update the values that are null.. doesn't change previous values.
@@ -388,6 +399,17 @@ def update_default_value_entries(table_param, default_value):
     for entry in entries:
         if not entry.value:
             entry.value = default_value
+            try:
+                rel_id = table_param.foreign_key_reference_table.table_reference.table_id
+                relationship = Relationship.query.filter_by(foreign_key_rel_id = rel_id, entry_ref_pk = default_value, child_table_id=table_param.table_id).first() 
+                if not relationship:
+                    relationship = Relationship(entry_ref_pk=default_value, foreign_key_rel_id=rel_id, child_table_id=table_param.table_id)
+                if entrylist not in relationship.entrylists:
+                    relationship.entrylists.append(entrylist)
+                    db.session.add(relationship)
+            except:
+                raise Exception({"error": "Could not reference the foreign key id while getting/creating relationship"})
+
 
 
 

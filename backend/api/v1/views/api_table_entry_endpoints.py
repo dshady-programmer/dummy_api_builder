@@ -15,7 +15,7 @@ from models import (
     Relationship,
     ForeignKeyFieldReferenceTable, db
 )
-
+from executor import init_executor
 from .utils.model_entry_utils import (
     create_entry, 
     list_entries, 
@@ -27,6 +27,7 @@ from .utils.cache_utils import (
     set_cache,
     set_user_api_cache,
     invalidate_user_cache_api,
+    update_entry_list_cache_on_add_new_entries
     
 
 )
@@ -51,7 +52,7 @@ def add_list_entry(api_token, api_name, model_name):
     if request.method == "POST":
         remaining_rows = retrieve_remaining_rows_limit(user)
         if remaining_rows <= 0:
-            return make_response("You have reached your maximum number of rows allowed.", 403)
+            return jsonify({"error": "You have reached your maximum number of rows allowed."}), 403
 
         csv_file = request.files.get("csv_file")
         if csv_file:
@@ -67,14 +68,17 @@ def add_list_entry(api_token, api_name, model_name):
             return jsonify({"error": "Entries must be an object or a an array of objects"}), 400
         no_of_entries_key = f"{user.id}:{api.id}:{model_name}:num_of_entries"
         prev_num = get_cache(no_of_entries_key)
-
+        executor_thread = init_executor()
+        print("executor_thread", executor_thread)
 
         if type(entries) == dict:
             response = create_entry(table, entries)
+            
             if 'error' in response:
                 return jsonify(response), 400
             if prev_num is not None:
                 set_cache(no_of_entries_key, prev_num + 1)
+            executor_thread.submit(update_entry_list_cache_on_add_new_entries, list_cache_key, [response])
             return jsonify(response), 200
         else:
             responses = []
@@ -88,6 +92,7 @@ def add_list_entry(api_token, api_name, model_name):
                     stringified_key_entry = {str(k): v for k, v in entry.items()}
                     if prev_num is not None:
                         set_cache(no_of_entries_key, prev_num + num_of_responses)
+                    executor_thread.submit(update_entry_list_cache_on_add_new_entries, list_cache_key, responses)
                     return jsonify({
                             "status": "error",
                             "error": {
@@ -100,7 +105,8 @@ def add_list_entry(api_token, api_name, model_name):
                 responses.append(response)
             num_of_responses = len(responses)
             if prev_num is not None:
-                set_cache(no_of_entries_key, prev_num + num_of_responses)    
+                set_cache(no_of_entries_key, prev_num + num_of_responses) 
+            executor_thread.submit(update_entry_list_cache_on_add_new_entries, list_cache_key, responses)   
             return jsonify({
                 "status": "success",
                 "results": responses,
@@ -167,7 +173,8 @@ def update_delete_retrieve_entry(api_token, api_name, model_name, model_id):
             child_tables.append(r.child_table)
             r.entrylists.clear()
             db.session.delete(r)
-        EntryList.query.filter_by(table_id = table.id, primary_key_value = model_id).delete()
+        e_list.relationships.clear()
+        db.session.delete(e_list)
         db.session.commit()
         invalidate_user_cache_api(cache_key, api.id, table.name, child_tables)
         return jsonify({'message': 'Entry succesfully deleted'}), 204 # NO content afterall

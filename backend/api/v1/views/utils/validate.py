@@ -192,7 +192,7 @@ def foreign_key_constraints_validator(parent_table, table_param, nullable=False)
         Runs validation on all existing fields and ensure that they are valid keys
 
     """
-    from models import EntryList
+    from models import EntryList, Relationship, db
     entries = table_param.entries
     validated_keys = set()
     for entry in entries:
@@ -202,6 +202,16 @@ def foreign_key_constraints_validator(parent_table, table_param, nullable=False)
             e_list = EntryList.query.filter_by(table_id=parent_table.id, primary_key_value=entry.value).first()
             if not e_list:
                 raise Exception({"error": "Failed foreign key constraints, one or more rows does not reference a valid pk value on the parent table "})
+            try:
+                relationship = Relationship.query.filter_by(foreign_key_rel_id = parent_table.reference.id, entry_ref_pk = entry.value, child_table_id=table_param.table_id).first() 
+                if not relationship:
+                    relationship = Relationship(entry_ref_pk=entry.value, foreign_key_rel_id=parent_table.reference.id, child_table_id=table_param.table_id)
+                if e_list not in relationship.entrylists:
+                    relationship.entrylists.append(e_list)
+                    db.session.add(relationship)
+            except:
+                raise Exception({"error": "Could not reference the foreign key id while getting/creating relationship"})
+
         elif nullable and not entry.value:
             continue
         elif not nullable and not entry.value:

@@ -9,7 +9,7 @@ from api.v1.auth.auth import login_required
 from models import db, Api, Table, Relationship
 from .utils.validate import validate_name
 from .utils.model_utils import parse_and_create_tableparameters, parse_and_update_tableparameters
-from .utils.cache_utils import get_cache, set_cache, set_cache_model_details, invalidate_model_cache, invalidate_api_detail_cache
+from .utils.cache_utils import get_cache, set_cache, set_cache_model_details, invalidate_model_cache, invalidate_api_detail_cache, invalidate_user_cache_api
 
 
 """
@@ -96,7 +96,7 @@ def update_model(user, api_id, model_name):
         key2 = f"{user.id}-{api_id}-api-details"
         invalidate_api_detail_cache(None, key2, api_id)
     invalidate_model_cache(api_id, model_name)
-
+    
     return jsonify(response), 200
 
 
@@ -164,6 +164,14 @@ def delete_model(user, api_id, model_name):
     for tp in tbl_ps:
         tp.constraints.clear()
     # db.session.delete(t.reference)
+    rels = Relationship.query.filter_by(foreign_key_rel_id=t.reference.id)
+    for r in rels:
+        r.entrylists.clear()
+        db.session.delete(r)
+    rels_child = Relationship.query.filter_by(child_table_id=t.id)
+    for rc in rels_child:
+        rc.entrylists.clear()
+        db.session.delete(rc)
     db.session.delete(t)
 
     db.session.commit()
@@ -192,6 +200,10 @@ def truncate_model(user, api_id, model_name):
     for r in rels:
         r.entrylists.clear()
         db.session.delete(r)
+    rels_child = Relationship.query.filter_by(child_table_id=t.id)
+    for rc in rels_child:
+        rc.entrylists.clear()
+        db.session.delete(rc)
 
     db.session.commit()
     no_of_entries_key = f"{user.id}:{api_id}:{model_name}:num_of_entries"
