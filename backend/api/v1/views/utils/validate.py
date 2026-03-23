@@ -27,16 +27,16 @@ def autogenerate_keys(tb_param):
 
     return value
 
-def retrieve_remaining_rows_limit(user):
-    from .constants import MAX_ROW_FOR_USER
+# def retrieve_remaining_rows_limit(user):
+#     from models.user import MAX_ROW_FOR_USER
 
-    apis = user.user_apis
-    total_rows = 0
-    for api in apis:
-        for table in api.tables:
-            total_rows += len(table.entry_lists)
-    remaining_rows = MAX_ROW_FOR_USER - total_rows
-    return remaining_rows
+#     apis = user.user_apis
+#     total_rows = 0
+#     for api in apis:
+#         for table in api.tables:
+#             total_rows += len(table.entry_lists)
+#     remaining_rows = MAX_ROW_FOR_USER - total_rows
+#     return remaining_rows
 
 def validate_constraint(constraint):
     valid_constraints = [

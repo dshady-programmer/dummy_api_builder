@@ -3,8 +3,7 @@ from sqlalchemy import event
 
 
 @event.listens_for(User, "after_insert")
-def create_reference_table(mapper, connection, target):
-
+def create_reference_user(mapper, connection, target):
     connection.execute(
         UserLimit.__table__.insert().values(
             user_id=target.id

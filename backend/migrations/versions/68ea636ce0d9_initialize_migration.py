@@ -1,8 +1,8 @@
 """initialize migration
 
-Revision ID: 29c47629fc01
+Revision ID: 68ea636ce0d9
 Revises: 
-Create Date: 2026-03-23 20:50:51.299076
+Create Date: 2026-03-23 03:06:04.687952
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = '29c47629fc01'
+revision = '68ea636ce0d9'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -49,8 +49,10 @@ def upgrade():
     sa.Column('user_id', sa.Integer(), nullable=False),
     sa.Column('current_rows', sa.Integer(), nullable=False),
     sa.Column('max_rows', sa.Integer(), nullable=False),
+    sa.CheckConstraint('current_rows <= max_rows', name='check_current_rows_not_exceed_max_rows'),
     sa.ForeignKeyConstraint(['user_id'], ['user.id'], ),
-    sa.PrimaryKeyConstraint('id')
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('user_id')
     )
     op.create_table('table',
     sa.Column('id', sa.Integer(), nullable=False),

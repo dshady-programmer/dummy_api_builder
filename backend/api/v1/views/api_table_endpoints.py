@@ -37,7 +37,7 @@ def create_model(user, api_id):
 
     api = Api.query.filter_by(id=api_id, user_id=user.id).first()
     if not api:
-        return jsonify({"error": "no api of such is associated to the user"}), 400
+        return jsonify({"error": "no api of such is associated with the user"}), 400
     
     get_table = Table.query.filter_by(api_id=api_id, name=name).first()
     if get_table:
@@ -68,7 +68,7 @@ def update_model(user, api_id, model_name):
     entry_present = False
     should_invalidate_api_detail = False
     if not api:
-        return jsonify({"error": "no api of such is associated to the user"}), 400
+        return jsonify({"error": "no api of such is associated with the user"}), 400
     get_table = Table.query.filter_by(name=model_name, api_id=api_id).first()
     if not get_table:
         return jsonify({"error": "Table doesn't exist"}), 400
@@ -153,7 +153,7 @@ def show_model(user, api_id, model_name):
 def delete_model(user, api_id, model_name):
     api = Api.query.filter_by(id=api_id, user_id=user.id).first()
     if not api:
-        return jsonify({"error": "no api of such is associated to the user"}),400
+        return jsonify({"error": "no api of such is associated with the user"}),400
     t = Table.query.filter_by(name=model_name, api_id=api_id).first()
     tbl_ps = t.table_parameters
     for tp in tbl_ps:
@@ -184,7 +184,7 @@ def delete_model(user, api_id, model_name):
 def truncate_model(user, api_id, model_name):
     api = Api.query.filter_by(id=api_id, user_id=user.id).first()
     if not api:
-        return jsonify({"error": "no api of such is associated to the user"}),400
+        return jsonify({"error": "no api of such is associated with the user"}),400
     t = Table.query.filter_by(name=model_name, api_id=api_id).first()
 
     entrylists = t.entry_lists

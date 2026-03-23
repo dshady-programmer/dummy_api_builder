@@ -250,7 +250,7 @@ class TestCreateModel(TestTableEndpoints):
             headers={'x-access-token': self.token}
         )
         self.assertEqual(resp.status_code, 400)
-        self.assertEqual(resp.json["error"], "no api of such is associated to the user")
+        self.assertEqual(resp.json["error"], "no api of such is associated with the user")
 
 
 class TestUpdateModel(TestTableEndpoints):
@@ -298,7 +298,7 @@ class TestUpdateModel(TestTableEndpoints):
             headers={'x-access-token': self.token}
         )
         self.assertEqual(resp.status_code, 400)
-        self.assertEqual(resp.json["error"], "no api of such is associated to the user")
+        self.assertEqual(resp.json["error"], "no api of such is associated with the user")
     
     def test_update_model_non_existent_table(self):
         """Test updating non-existent model"""
@@ -468,7 +468,7 @@ class TestShowModel(TestTableEndpoints):
         endpoint = "api/v1/my_api/99999/show_model/User"
         resp = self.client.get(endpoint, headers={'x-access-token': self.token})
         self.assertEqual(resp.status_code, 400)
-        self.assertEqual(resp.json["error"], "no api of such is associated to the user")
+        self.assertEqual(resp.json["error"], "no api of such is associated with the user")
     
     def test_show_model_non_existent_table(self):
         """Test showing non-existent model"""

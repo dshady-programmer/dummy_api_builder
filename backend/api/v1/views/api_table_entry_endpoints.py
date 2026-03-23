@@ -4,6 +4,8 @@ e.g name="peter"
 age=12
 etc..
 """
+from sqlalchemy import select, text
+from sqlalchemy.exc import IntegrityError
 from api.v1.views import app_views
 from flask import request, jsonify, make_response
 from models import (
@@ -13,7 +15,7 @@ from models import (
     Entry,
     EntryList,
     Relationship,
-    ForeignKeyFieldReferenceTable, db
+    UserLimit, db
 )
 from executor import init_executor
 from .utils.model_entry_utils import (
@@ -31,7 +33,6 @@ from .utils.cache_utils import (
     
 
 )
-from .utils.validate import retrieve_remaining_rows_limit
 from .utils.parsers import parse_value, csv_file_parser
 
 
@@ -50,7 +51,13 @@ def add_list_entry(api_token, api_name, model_name):
     list_cache_key_format = "{api_token}-{api_name}-{model_name}-entries"
     list_cache_key = list_cache_key_format.format(api_token=api_token, api_name=api_name, model_name=model_name)
     if request.method == "POST":
-        remaining_rows = retrieve_remaining_rows_limit(user)
+        # remaining_rows = retrieve_remaining_rows_limit(user)
+        user_limit = db.session.execute(
+            select(UserLimit).where(
+                UserLimit.user_id == user.id
+            ).with_for_update()
+        ).scalar_one() # select for update (locks row, the usage here is just for checking and not updating)
+        remaining_rows = user_limit.max_rows - user_limit.current_rows
         if remaining_rows <= 0:
             return jsonify({"error": "You have reached your maximum number of rows allowed."}), 403
 
@@ -67,45 +74,71 @@ def add_list_entry(api_token, api_name, model_name):
         if type(entries) not in [list, dict]: 
             return jsonify({"error": "Entries must be an object or a an array of objects"}), 400
         no_of_entries_key = f"{user.id}:{api.id}:{model_name}:num_of_entries"
-        prev_num = get_cache(no_of_entries_key)
         executor_thread = init_executor()
-        print("executor_thread", executor_thread)
-
+        # print("executor_thread", executor_thread)
+        row = None
+        row_update = lambda: db.session.execute(
+                    text(
+                        """
+                            UPDATE user_limit
+                            SET current_rows = current_rows + 1
+                            WHERE user_id = :user_id
+                            AND current_rows < max_rows
+                            RETURNING current_rows
+                        """
+                    ),
+                    {"user_id": user.id}
+                )
+        
         if type(entries) == dict:
-            response = create_entry(table, entries)
-            
-            if 'error' in response:
-                return jsonify(response), 400
-            if prev_num is not None:
-                set_cache(no_of_entries_key, prev_num + 1)
-            executor_thread.submit(update_entry_list_cache_on_add_new_entries, list_cache_key, [response])
-            return jsonify(response), 200
+            try:
+                row = row_update().fetchone()
+                if not row:
+                    raise IntegrityError
+                response = create_entry(table, entries)
+                
+                if 'error' in response:
+                    return jsonify(response), 400
+                set_cache(no_of_entries_key, row.current_rows)
+                executor_thread.submit(update_entry_list_cache_on_add_new_entries, list_cache_key, [response])
+                return jsonify(response), 200
+            except IntegrityError:
+                db.session.rollback()
+                return jsonify({"error": "You have reached your maximum number of rows allowed."}), 403
+
         else:
             responses = []
             if len(entries) > remaining_rows:
                 entries = entries[:remaining_rows]
             for entry in entries:
-                response = create_entry(table, entry)
+                try:
+                    row = row_update().fetchone()
+                    if not row:
+                        raise IntegrityError
+                    response = create_entry(table, entry)
 
-                if 'error' in response:
-                    num_of_responses = len(responses)
-                    stringified_key_entry = {str(k): v for k, v in entry.items()}
-                    if prev_num is not None:
-                        set_cache(no_of_entries_key, prev_num + num_of_responses)
-                    executor_thread.submit(update_entry_list_cache_on_add_new_entries, list_cache_key, responses)
-                    return jsonify({
-                            "status": "error",
-                            "error": {
-                                "entry": stringified_key_entry,
-                                "response": response
-                            },
-                            "successful_entries": responses,
-                            "Number of entries added": num_of_responses
-                        }), 400
-                responses.append(response)
+                    if 'error' in response:
+                        num_of_responses = len(responses)
+                        stringified_key_entry = {str(k): v for k, v in entry.items()}
+                        set_cache(no_of_entries_key, row.current_rows)
+                        executor_thread.submit(update_entry_list_cache_on_add_new_entries, list_cache_key, responses)
+                        return jsonify({
+                                "status": "error",
+                                "error": {
+                                    "entry": stringified_key_entry,
+                                    "response": response
+                                },
+                                "successful_entries": responses,
+                                "Number of entries added": num_of_responses
+                            }), 400
+                    responses.append(response)
+                except IntegrityError:
+                    db.session.rollback()
+                    return jsonify({"error": "You have reached your maximum number of rows allowed."}), 403
+
             num_of_responses = len(responses)
-            if prev_num is not None:
-                set_cache(no_of_entries_key, prev_num + num_of_responses) 
+            if row is not None:
+                set_cache(no_of_entries_key, row.current_rows) 
             executor_thread.submit(update_entry_list_cache_on_add_new_entries, list_cache_key, responses)   
             return jsonify({
                 "status": "success",

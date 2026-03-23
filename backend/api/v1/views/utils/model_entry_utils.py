@@ -200,7 +200,7 @@ def create_entry(table, entry):
         
 
     except Exception as e:
-        print(e)
+        # print(e)
         error = e.args[0]
         db.session.rollback()
         if type(error) == dict:

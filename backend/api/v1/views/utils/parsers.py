@@ -31,7 +31,7 @@ def html_clean_value(value):
 def csv_file_parser(csv_file, table, remaining_rows, delimiter=",", encoding='utf-8'):
     import csv
     import io
-    from .constants import MAX_ROWS_FOR_CSV
+    from models.user import MAX_ROWS_FOR_CSV
     entries = []
     
     try:
