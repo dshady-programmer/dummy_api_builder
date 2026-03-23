@@ -174,7 +174,7 @@ def unique_constraints_validator(table_param, nullable=False):
     entries = table_param.entries # get the entire column of existing values
     existing_values = set() # take advantage of the set data type for average 0(1) lookup
     for entry in entries:
-        # condition if it has a nullable flag and but 
+ 
         condition = (entry.value and entry.value in existing_values)
 
         if condition:
@@ -224,13 +224,13 @@ def foreign_key_ref_table_validator(table_param, param_dt, param, user):
     
     from models import Api, Table, ForeignKeyFieldReferenceTable
 
-    if not validate_primary_key_dtType(param_dt): # since foreign key would always reference a primary key of the parent table.. it should conform with the valid data types
-        # you can use of a foreign with the data type int, string or text. It doesn't have to tie strictly the parent table primary key field datatype
+    if not validate_primary_key_dtType(param_dt): # since foreign key would always reference a primary key of the parent table.. it should conform with the valid pk data types
+        # you can use a foreign with the data type int, string or text. It doesn't have to tie strictly to the parent table primary key field datatype
         raise Exception({"error": "Foreign key data type must be either text, string or integer"})
     fk_rf = param.get("foreign_key_rf") #expected format(api.table)
     if not fk_rf:
         raise Exception({"error": "Expected a foreign key reference field."})
-    f_api, f_table = fk_rf.split(".") # Check if the reference api and model are valid for it to be a foreign key field
+    f_api, f_table = fk_rf.split(".", 1) # Check if the reference api and model are valid for it to be a foreign key field
     r_api = Api.query.filter_by(name=f_api, user_id=user.id).first()
     if not r_api:
         raise Exception({"error": "Api name referenced in the foreign key doesn't exist"})
@@ -261,8 +261,8 @@ def validate_foreign_key_default_value(
     table_param.default_value = default_value
     if entry_present:
         if not update:
-            create_default_value_entries(table, table_param, default_value)
+            create_default_value_entries(table, table_param, default_value, True)
 
         elif update and run_update:
-            update_default_value_entries(table_param, default_value)
+            update_default_value_entries(table_param, default_value, True)
             

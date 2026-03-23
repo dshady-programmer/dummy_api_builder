@@ -986,9 +986,8 @@ class TestUpdateModelWithExistingData(TestTableEndpoints):
             json={"tbl_params": tbl_params},
             headers={'x-access-token': self.token}
         )
-        
+
         self.assertEqual(resp.status_code, 200)
-        
         with self.app.app_context():
             # Verify default entry was created for existing row
             table = self.db.session.get(Table, self.table_id)

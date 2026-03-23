@@ -47,19 +47,28 @@ def table_parameter_constraints_checks(
         
         if update and entry_present and "unique" in constraints and "unique" not in prev_constraints:
             # only check unique constraints on existing table fields if the unique constraint wasn't present in previous constraints set
-            # validate all entries in the table and ensure the field existing values are unique if it fails raise and error
-            # check for nullable constraints is also done to allow exempt null values from unique constraint check 
+            # validate all entries in the table and ensure the field existing values are unique if it fails raise an error
+            # check for nullable constraints is also done to exempt null values from unique constraint check 
             if "nullable" in constraints:
                 unique_constraints_validator(table_param, True)
             else:
                 unique_constraints_validator(table_param)        
 
         elif entry_present and not update and ("nullable" not in constraints or "default" not in constraints or "unique" in constraints):
+            # if it's not an update and there is already data in the table, 
+            # you can't add a new field without a default value or a nullable constraint 
+            # since the existing entries won't have any value for the new field and that 
+            # would violate the not null constraint. 
+            #
+            # Also you can't add a unique constraint without a default value 
+            # or a nullable constraint since the existing entries won't have any value 
+            # for the new field and that would violate the unique constraint
             constraints.add("nullable")
-            # create entries to add the null values
-
+        
         if entry_present and "foreign_key" in constraints:
             if "default" not in constraints:
+                # if there is already data in the table, you can't add a foreign key constraint 
+                # without a default value or a nullable constraint
                 constraints.add("nullable")
 
         # run the foreign key validation check
@@ -73,16 +82,19 @@ def table_parameter_constraints_checks(
 
     if "default" in constraints:
 
-        
         if "primary_key" not in constraints:
             if not param_default_value:
                 raise Exception({'error': 'Default constraint requires a default value to be provided'})
            
-            # if it has a unique constraint and not a primary key constraint raise an error
+    
             if "unique" in constraints:
+                # if there is a unique constraint on the field, 
+                # we need to ensure that the default value doesn't violate the unique constraint
                 constraints.remove("unique")
             if "foreign_key" not in constraints:
-                """ for foreign keys validate that the default value provided is a valid primary key"""
+                # if there is no foreign key constraint, 
+                # we can just create entries with the default value 
+                # if there is already data in the table
                 if not validate_entry_value(param_default_value, param_dt):
                     raise Exception({"error": "Wrong data type passed for default value"})
                 if not validate_entry_value_length(param_default_value, param_dt, param_dt_length):
@@ -93,6 +105,7 @@ def table_parameter_constraints_checks(
                     else:
                         update_default_value_entries(table_param, param_default_value)
                 table_param.default_value = param_default_value
+
 
         else:
             # if it has primary key then the backend auto generates keys
@@ -141,7 +154,7 @@ def check_and_validate_tableparameter(
     for const in constraints:
         # There can be more than one constraints for a model field
         if not validate_constraint(const):
-            # Check if the constraints are valid
+            # Check if the constraint is valid
             raise Exception({"error": "invalid constraint"})
         if const == "foreign_key":
             parent_table = foreign_key_ref_table_validator(table_param, param_dt, param, user)
@@ -182,7 +195,6 @@ def create_table_parameter(param, table, tableparam_names, user, entry_present):
     param_dt_length = param.get("dt_length")
     param_default_value = param.get("default_value", None)
     constraints = param.get("constraints") or []
-    
     if type(constraints) != list:
         raise Exception({"error": "Invalid constraints type"})
     constraints = set(constraints) # incase of duplicate values.
@@ -216,7 +228,7 @@ def create_table_parameter(param, table, tableparam_names, user, entry_present):
         else:
             param_dt_length = None
     except ValueError: 
-        # In the case the value passed is not an integer
+        # In the case the param_dt_length passed is not an integer
         param_dt_length = None
 
     # If everything goes perfectly go ahead and create the model field relating to the user table/model and the api
@@ -322,9 +334,9 @@ def parse_and_update_tableparameters(table_parameters, table, user, entry_presen
         tableparam_names.add(existing_tblp.name)
         existing_table_parameter_mapper[existing_tblp.id] = existing_tblp
     
+
     try:
         for param in table_parameters:
-
             param_id = param.get("index")
             if param_id in existing_table_parameter_mapper:
                 is_primary_key = update_table_parameter(param, table, existing_table_parameter_mapper[param_id], tableparam_names, user, entry_present)

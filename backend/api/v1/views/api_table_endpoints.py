@@ -60,11 +60,6 @@ def create_model(user, api_id):
 @app_views.route('/my_api/<api_id>/update_model/<model_name>', methods=["PUT"])
 @login_required
 def update_model(user, api_id, model_name):
-    """
-    The current update model functionality is somewhat 
-    rigid and would be improved
-    
-    """
     data = request.get_json()
     name = data.get('name')
     description = data.get('description')
@@ -115,7 +110,7 @@ def show_model(user, api_id, model_name):
         return jsonify(cached_data), 200
     api = Api.query.filter_by(id=api_id, user_id=user.id).first()
     if not api:
-        return jsonify({"error": "no api of such is associated to the user"}),400
+        return jsonify({"error": "no api of such is associated with the user"}),400
     get_table = Table.query.filter_by(name=model_name, api_id=api_id).first()
     if not get_table:
         return jsonify({"error": "Table doesn't exist"}), 400

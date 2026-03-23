@@ -1,8 +1,8 @@
 """initialize migration
 
-Revision ID: d8772635bf76
+Revision ID: 29c47629fc01
 Revises: 
-Create Date: 2025-12-11 21:19:19.750112
+Create Date: 2026-03-23 20:50:51.299076
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = 'd8772635bf76'
+revision = '29c47629fc01'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -41,6 +41,14 @@ def upgrade():
     sa.Column('name', sa.String(), nullable=False),
     sa.Column('description', sa.Text(), nullable=True),
     sa.Column('user_id', sa.Integer(), nullable=True),
+    sa.ForeignKeyConstraint(['user_id'], ['user.id'], ),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_table('user_limit',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('user_id', sa.Integer(), nullable=False),
+    sa.Column('current_rows', sa.Integer(), nullable=False),
+    sa.Column('max_rows', sa.Integer(), nullable=False),
     sa.ForeignKeyConstraint(['user_id'], ['user.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
@@ -78,10 +86,11 @@ def upgrade():
     op.create_table('tableparameter',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('name', sa.String(), nullable=False),
-    sa.Column('data_type', sa.Enum('string', 'text', 'integer', 'boolean', 'date', 'datetime', name='datatypes'), nullable=False),
+    sa.Column('data_type', sa.Enum('string', 'decimal', 'text', 'integer', 'boolean', 'date', 'datetime', name='datatypes'), nullable=False),
     sa.Column('primary_key', sa.Boolean(), nullable=True),
     sa.Column('foreign_key_reference_id', sa.Integer(), nullable=True),
     sa.Column('dataType_length', sa.Integer(), nullable=True),
+    sa.Column('default_value', sa.Text(), nullable=True),
     sa.Column('table_id', sa.Integer(), nullable=True),
     sa.ForeignKeyConstraint(['foreign_key_reference_id'], ['foreignkeyfieldreferencetable.id'], ),
     sa.ForeignKeyConstraint(['table_id'], ['table.id'], ),
@@ -123,6 +132,7 @@ def downgrade():
     op.drop_table('foreignkeyfieldreferencetable')
     op.drop_table('entrylist')
     op.drop_table('table')
+    op.drop_table('user_limit')
     op.drop_table('api')
     op.drop_table('user')
     op.drop_table('constraint')

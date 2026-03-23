@@ -423,6 +423,47 @@ class TestForeignKeyWithDefaultValue(TestConfig):
         self.assertEqual(resp.status_code, 400)
         self.assertIn("does not reference a valid primary key", resp.json["error"])
 
+    def test_fk_default_value_of_none(self):
+        """Test fk default with none value"""
+        
+        child_params = [
+            {"name": "_id", "datatype": "integer", "constraints": ["primary_key"]},
+            {"name": "title", "datatype": "string"},
+            {
+                "name": "category_id",
+                "datatype": "integer",
+                "constraints": ["foreign_key", "default"],
+                "foreign_key_rf": "TestApi.Category",
+                "default_value": None
+            }
+        ]
+        resp = self.client.post(
+            f"api/v1/my_api/{self.api_id}/create_model",
+            json={"name": "Article", "tbl_params": child_params},
+            headers={'x-access-token': self.token}
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_fk_default_value_with_default_omitted(self):
+        """Test fk default constraint while omitting default value"""
+        
+        child_params = [
+            {"name": "_id", "datatype": "integer", "constraints": ["primary_key"]},
+            {"name": "title", "datatype": "string"},
+            {
+                "name": "category_id",
+                "datatype": "integer",
+                "constraints": ["foreign_key", "default"],
+                "foreign_key_rf": "TestApi.Category",
+            }
+        ]
+        resp = self.client.post(
+            f"api/v1/my_api/{self.api_id}/create_model",
+            json={"name": "Article", "tbl_params": child_params},
+            headers={'x-access-token': self.token}
+        )
+        
+        self.assertEqual(resp.status_code, 400)
 
 class TestForeignKeyConstraintsCombinations(TestConfig):
     """Test FK with various constraint combinations"""

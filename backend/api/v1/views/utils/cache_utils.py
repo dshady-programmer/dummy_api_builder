@@ -112,7 +112,7 @@ def invalidate_model_cache(api_id, model_name, cache_key = None):
 
         api_id_key = f"api:{api_id}"
         api_model_key = f"model:{api_id}:{model_name}"
-        model_keys = get_cache(api_model_key) or []
+        model_keys = set(get_cache(api_model_key) or [])
         
         api_keys = set(get_cache(api_id_key) or [])
         # print()
@@ -131,7 +131,7 @@ def invalidate_model_cache(api_id, model_name, cache_key = None):
             for key in model_keys:
                 delete_cache(key)
             delete_cache(api_model_key)
-            api_keys.difference_update(set(model_keys))
+            api_keys.difference_update(model_keys)
         set_cache(api_id_key, list(api_keys))
         return None
     except:

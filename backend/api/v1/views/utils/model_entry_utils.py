@@ -374,31 +374,13 @@ def create_null_value_entries(table, table_param):
         table_param.entries.append(e)
         entrylist.entries.append(e)
 
-def create_default_value_entries(table, table_param, default_value):
+def create_default_value_entries(table, table_param, default_value, is_fk=False):
     entrylists = table.entry_lists
-
     for entrylist in entrylists:
         e = Entry(value = default_value)
         table_param.entries.append(e)
         entrylist.entries.append(e)
-        try:
-            rel_id = table_param.foreign_key_reference_table.table_reference.table_id
-            relationship = Relationship.query.filter_by(foreign_key_rel_id = rel_id, entry_ref_pk = default_value, child_table_id=table_param.table_id).first() 
-            if not relationship:
-                relationship = Relationship(entry_ref_pk=default_value, foreign_key_rel_id=rel_id, child_table_id=table_param.table_id)
-            if entrylist not in relationship.entrylists:
-                relationship.entrylists.append(entrylist)
-                db.session.add(relationship)
-        except:
-            raise Exception({"error": "Could not reference the foreign key id while getting/creating relationship"})
-
-
-def update_default_value_entries(table_param, default_value):
-    #update the values that are null.. doesn't change previous values.
-    entries = table_param.entries
-    for entry in entries:
-        if not entry.value:
-            entry.value = default_value
+        if is_fk:
             try:
                 rel_id = table_param.foreign_key_reference_table.table_reference.table_id
                 relationship = Relationship.query.filter_by(foreign_key_rel_id = rel_id, entry_ref_pk = default_value, child_table_id=table_param.table_id).first() 
@@ -409,6 +391,25 @@ def update_default_value_entries(table_param, default_value):
                     db.session.add(relationship)
             except:
                 raise Exception({"error": "Could not reference the foreign key id while getting/creating relationship"})
+
+
+def update_default_value_entries(table_param, default_value, is_fk=False):
+    #update the values that are null.. doesn't change previous values.
+    entries = table_param.entries
+    for entry in entries:
+        if not entry.value:
+            entry.value = default_value
+            if is_fk:   
+                try:
+                    rel_id = table_param.foreign_key_reference_table.table_reference.table_id
+                    relationship = Relationship.query.filter_by(foreign_key_rel_id = rel_id, entry_ref_pk = default_value, child_table_id=table_param.table_id).first() 
+                    if not relationship:
+                        relationship = Relationship(entry_ref_pk=default_value, foreign_key_rel_id=rel_id, child_table_id=table_param.table_id)
+                    if entrylist not in relationship.entrylists:
+                        relationship.entrylists.append(entrylist)
+                        db.session.add(relationship)
+                except:
+                    raise Exception({"error": "Could not reference the foreign key id while getting/creating relationship"})
 
 
 
