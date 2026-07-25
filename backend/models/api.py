@@ -6,6 +6,16 @@ from . import db
 
 
 class Api(db.Model):
+
+    """
+        Api model to keep track of user created apis
+        id: autoincrement, model primary key
+        name: Name of the api
+        description: Description of the api
+        user_id: Foreign key to the User model
+        user: Relationship to the User model for back reference
+        tables: Relationship to the Table model for back reference(api.tables gives all tables in the api)
+    """
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String, nullable=False)
     description = db.Column(db.Text)

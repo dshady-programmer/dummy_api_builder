@@ -8,6 +8,20 @@ MAX_ROWS_FOR_CSV = 100
 MAX_ROW_FOR_USER = 2000
 
 class User(db.Model):
+
+    """
+        User model to keep track of user entries
+
+        id: autoincrement, model primary key
+        public_id: For authentication purpose.
+        last_public_id_created: Last time public_id was created 
+        email: User email
+        api_token: User personal api token for access their api space
+        password: User password
+        user_apis: all apis linked to the user
+        user_limit_ref: Foreign key to the UserLimit model to keep track of the number of rows a user has created
+
+    """
     id = db.Column(db.Integer, primary_key=True)
     public_id = db.Column(db.String(64), unique=True, nullable=True)
     last_public_id_created = db.Column(db.DateTime, nullable=True)
@@ -24,6 +38,16 @@ class User(db.Model):
 
 
 class UserLimit(db.Model):
+    """
+        UserLimit model to keep track of the number of rows a user has created
+
+        id: autoincrement, model primary key
+        user_id: Foreign key to the User model
+        user_ref: Relationship to the User model for back reference
+        current_rows: Number of rows the user has created
+        max_rows: Maximum number of rows the user can create
+        check_constraint: Ensure current_rows does not exceed max_rows
+    """
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), unique=True, nullable=False)
     user_ref = db.relationship('User', back_populates='user_limit_ref')

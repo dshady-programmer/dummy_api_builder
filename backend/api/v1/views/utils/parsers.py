@@ -5,7 +5,9 @@ def parse_value(tb_parameter, value):
     # consts = [c.name.value for c in tb_parameter.constraints]
     # if "default" in consts:
     #     value = tb_parameter.default_value
+    print("datatype", datatype, value)
     try:
+
 
         if not value:
             value = None

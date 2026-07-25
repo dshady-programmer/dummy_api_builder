@@ -335,13 +335,16 @@ def list_entries(args, table, list_cache_key):
         runningSize = size
         unfiltered = True
 
+        # This needs to be revalidated
+        # print('got here')
         entrylists = get_raw_cache(list_cache_key)
+        # print(entrylists)
         if entrylists:
             return entrylists
            
         # if not page:
 
-
+        print('got here')
         for entry_list in table.entry_lists:
             if entry_list.entries:
                 if page and runningOffset > 0:

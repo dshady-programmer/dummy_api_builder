@@ -22,6 +22,9 @@ parameter_constraints = db.Table('parameter_constraint',
    
 
 class DataTypes(enum.Enum):
+    """
+        Data type enum map for the supported data types of a table parameter
+    """
     string = 'String'
     decimal = 'Decimal'
     text = 'Text'
@@ -33,6 +36,39 @@ class DataTypes(enum.Enum):
 
 
 class TableParameter(db.Model):
+
+    """
+        TableParameter model to keep track of the fields for each table (table columns)
+        id: autoincrement, model primary key
+        name: Name of the field
+        data_type: Data type of the field (can either be string, decimal, text, integer, boolean, date, datetime)
+        primary_key: True if this table parameter is a primary key of the table (There can be more than one, in the case of composite keys)
+        foreign_key_reference_id: If the column is foreign key, this field would be a reference to the foreign key reference table of the foreign key itself
+                                  e.g 
+                                  Car - table
+                                     - name
+                                     - make
+                                     - year
+                                     - country (foreign key to Country table)
+                                       foreign_key_reference_id would be 'Country'.reference (this maps to the foreignkeyreferencetable for Country)
+
+        dataType_length: The maximum length expected for a data entry. This is only valid for strings, text and integers
+        default_value: A user default value for this column if none is given
+                       - Behaves differently based on the table constraints..
+                          - for foreign key, the default value must be inputed by the user and would be validated against a valid entry with that value on the foreign key table
+                          - for primary key would be generated automatically and ignore any default value passed by the user. The generation would be based on the data type of the primary key
+                              ** if the data type is integer, generates a random value every new entry added to the table
+                              ** if the data type is string, generates a unique uuid value for every new entry added to the table
+                              note: This would only generate those values if users don't pass in a value on entry creation
+                          - a unique column can't have a default value
+        table_id: Foreign key to the Table model
+        table: Relationship to the Table model for back reference (tableparameter.table gives the table the parameter belongs to)
+        constraints: Many to many Relationship to the Constraint model for back reference (tableparameter.constraints gives all constraints on the parameter)
+        entries: Relationship to the Entry model for back reference (tableparameter.entries gives all entries for the parameter)
+                 note: tableparameter.entries would give all entries for the parameter across all entry_lists in a table.
+                       It's similar to grabbing only a car name from a car table with 1000 rows. It would give all 1000 car names in the table.
+
+    """
     __tablename__ = 'tableparameter'
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String, nullable=False)
