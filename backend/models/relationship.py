@@ -20,7 +20,7 @@ class Relationship(db.Model):
     """
         Relationship model to define foreign key relationships between tables
         id: autoincrement, model primary key
-        entry_ref_pk: Reference to the primary key of the foreign key table
+        entry_ref_pk: Reference to the primary key column to the particular foreign key table entry
         entrylists: Many to Many Relationship to the EntryList model for back reference (relationship.entrylists gives all the reverse relationship entry lists that reference the foreign key table)
                    e.g 
                      User table;

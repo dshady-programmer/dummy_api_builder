@@ -3,7 +3,63 @@ import json
 import pickle
 import time
 from redis.exceptions import WatchError
+import functools
 
+
+user_cache_namespace = lambda user_id: f"{{user:{user_id}}}" # {user:4}:api, using {} for consistent hashing across multiple nodes in the case of redis cluster
+api_cache_namespace = lambda user_id, api_id: f"{{user:{user_id}}}:api:{api_id}"
+
+# grabs the current version for the group space and grab the cache value
+
+get_key_lua_script = """
+    local version = redis.call("GET", KEYS[1])
+
+    if not version then
+        version = "0"
+    end
+
+    local data_key = ARGV[1] .. version
+    local value = redis.call("GET", data_key)
+
+    return {version, value} 
+"""
+
+set_key_lua_script = """
+    redis.call("SET", KEYS[1], ARGV[1])
+    redis.call("EXPIRE", KEYS[1], ARGV[2])
+    return redis.status_reply("OK")
+"""
+
+redis_client = None
+get_key_script = None
+set_key_script = None
+
+
+def update_redis_lua_script():
+    global redis_client, get_key_script, set_key_script
+    current_client = cache.cache._write_client
+    if current_client is not redis_client or get_key_script is None or set_key_script is None:
+        redis_client = current_client
+        get_key_script = redis_client.register_script(get_key_lua_script)
+        set_key_script = redis_client.register_script(set_key_lua_script)
+
+
+
+
+def fail_safe_cache_operation(func):
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            print(f"Cache operation failed: {e}")
+            return None
+    return wrapper
+
+
+
+@fail_safe_cache_operation
 def get_cache(key):
     """Retrieve a value from the cache by its key."""
     data = cache.get(key)
@@ -11,18 +67,78 @@ def get_cache(key):
         return json.loads(data)
     return None
 
-def set_cache(key, value, timeout=60*60*24*7):
+@fail_safe_cache_operation
+def set_cache(key, value, timeout=60*60*24):
     """Set a value in the cache with a specified key and timeout."""
     cache.set(key, json.dumps(value), timeout=timeout)
 
 
+@fail_safe_cache_operation
+def cached_api_list(user_id):
+    namespace = user_cache_namespace(user_id)
+    version_key = f"{namespace}:version" # {user:1}:version
+    api_list_key = f"{namespace}:apis:v" # {user:1}:apis:v
+    prefix = cache.cache._get_prefix()
+    api_list_key = prefix+api_list_key
+    version_key = prefix+version_key
+    update_redis_lua_script()
+    version, value = get_key_script(
+        keys=[version_key],
+        args=[api_list_key]
+    )
+    return version, value
 
-def set_raw_cache(key, value, timeout=60*60*24*7):
+@fail_safe_cache_operation
+def set_api_list_cache(user_id, version, apis, timeout=60*60*24):
+
+    namespace = user_cache_namespace(user_id)
+    api_list_key = f"{namespace}:v{version}"
+    prefix = cache.cache._get_prefix()
+    api_list_key = prefix+api_list_key
+
+    update_redis_lua_script()
+    set_key_script(
+        keys=[api_list_key],
+        args=[json.dumps(apis), str(timeout)]
+    )
+
+@fail_safe_cache_operation
+def get_api_detail_cache(user_id, api_id):
+    namespace = api_cache_namespace
+    version
+
+@fail_safe_cache_operation
+def set_api_detail_cache(user_id, version, detail, timeout=60*60*24):
+    ...
+
+@fail_safe_cache_operation
+def set_hash_cache(key, field, value, timeout=60*60*24):
+    """Set a value in the cache hash with a specified key, field, and timeout."""
+    prefix = cache.cache._get_prefix()
+    prefixed_key = prefix+key
+    r = cache.cache._write_client
+    r.hset(prefixed_key, field, json.dumps(value))
+    r.expire(prefixed_key, timeout)
+
+@fail_safe_cache_operation
+def get_hash_cache(key, field):
+    """Retrieve a value from the cache hash by its key and field."""
+    prefix = cache.cache._get_prefix()
+    prefixed_key = prefix+key
+    r = cache.cache._read_client
+    data = r.hget(prefixed_key, field)
+    if data:
+        return json.loads(data)
+    return None
+
+@fail_safe_cache_operation
+def set_raw_cache(key, value, timeout=60*60*24):
     prefix = cache.cache._get_prefix()
     prefixed_key = prefix+key
     r = cache.cache._write_client
     r.set(prefixed_key, json.dumps(value), ex=timeout)
 
+@fail_safe_cache_operation
 def get_raw_cache(key):
     prefix = cache.cache._get_prefix()
     prefixed_key = prefix+key
@@ -32,10 +148,16 @@ def get_raw_cache(key):
         return json.loads(data)
     return None
 
+@fail_safe_cache_operation
 def delete_cache(key):
     """Delete a value from the cache by its key."""
-    if cache.get(key):
-        cache.delete(key)   
+    
+    cache.delete(key)
+
+@fail_safe_cache_operation
+def multiple_key_delete(keys):
+    """Delete multiple keys from the cache."""
+    cache.delete_many(*keys)
 
 
 
@@ -44,6 +166,9 @@ def set_cache_api_details(key, data, api_id):
     """Cache API details using a key, composed of api_id and user_id if not already cached."""
     
     try:
+        """
+        make this atomic
+        """
         set_cache(key, data)
         api_id_key = f"api:{api_id}"
         api_keys = set(get_cache(api_id_key) or [])
@@ -56,6 +181,10 @@ def set_cache_api_details(key, data, api_id):
 
 def invalidate_api_detail_cache(list_key, detail_key, api_id):
     try:
+
+        """
+        make this atomic 
+        """
         if list_key:
             delete_cache(list_key)
         delete_cache(detail_key)

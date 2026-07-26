@@ -18,17 +18,18 @@ def login_required(f):
     def decorated(*args, **kwargs):
         from api.v1.app import app
         from models.user import User
+        from models import db
         token = request.headers.get('x-access-token')
         if not token:
             return jsonify({'error': 'Token is missing'}), 401
         try:
             # decoding the payload to fetch the stored details
             data = jwt.decode(token, app.config['SECRET_KEY'],algorithms=["HS256"])
-            
-            current_user = User.query\
-                .filter_by(public_id = data['public_id'])\
-                .first()
-        except:
+
+            stmt = db.select(User).filter_by(public_id=data['public_id'])
+            current_user = db.session.scalars(stmt).first()
+        except Exception as e:
+            print('exception', e)
             return jsonify({
                 'error' : 'Token is invalid !!'
             }), 401

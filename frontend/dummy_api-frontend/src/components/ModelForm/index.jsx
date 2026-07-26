@@ -76,7 +76,7 @@ const Index = ({ fList, mParam, endpoint, title, btnTitle, method }) => {
             const data = await res.json()
             // console.log(data)
             if (res.status == 200) {
-                navigate(`/my_apis/${params.apiId}/model/${data.name}`)
+                navigate(`/my_apis/${params.apiId}/model/${data.id}`)
             } else {
                 if (res.status == 401) {
                     Cookies.remove("token", { path: '/' })
@@ -182,7 +182,7 @@ const Index = ({ fList, mParam, endpoint, title, btnTitle, method }) => {
                         <button type="button" onClick={() => {
                             let nextIndex = null
                             if (fieldList.length == 0)
-                                nextIndex = 1 // in the backend there's safe way to avoid any issue
+                                nextIndex = 1 // on the backend there's safe solution to avoid any issue
                             else {
                                 const largestIndex = Math.max(...fieldList)
                                 nextIndex = largestIndex + 1

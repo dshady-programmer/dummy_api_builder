@@ -3,6 +3,8 @@ import Cookies from "js-cookie";
 import { hostUrl } from "./variables";
 import { useNavigate } from "react-router-dom";
 
+import { useCallback } from "react";
+
 export const AppContext = React.createContext();
 
 const AppProvider = ({ children }) => {
@@ -109,12 +111,12 @@ const AppProvider = ({ children }) => {
             setUserLoading(false) 
         }
     }
-    const fetchModel = async (apiId, modelName) => {
+    const fetchModel = useCallback(async (apiId, modelId) => {
         const token = Cookies.get('token', { path: '/' })
         setLoading(true)
         try {
             
-            const response = await fetch(`${hostUrl}/api/v1/my_api/${apiId}/show_model/${modelName}`, {
+            const response = await fetch(`${hostUrl}/api/v1/my_api/${apiId}/show_model/${modelId}`, {
                 headers: {
                     'x-access-token': token
                 }
@@ -137,7 +139,8 @@ const AppProvider = ({ children }) => {
             
             setLoading(false)
         }
-    }
+    }, [navigate])
+
     return (<AppContext.Provider value={{
         user, fetchUser, apis, fetchApis, model, fetchModel,
         loading, userLoading, invalidate, setInvalidate,

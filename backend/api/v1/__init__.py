@@ -14,4 +14,5 @@ def create_app():
         app.config["TESTING"] = True
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = True
     app.config["SECRET_KEY"] = os.getenv("SECRET_KEY")
+    app.config["CACHE_IGNORE_ERRORS"] = True
     return app

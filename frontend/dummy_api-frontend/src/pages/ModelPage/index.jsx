@@ -16,12 +16,13 @@ const Index = () => {
     const token = Cookies.get('token', { path: '/' })
     const params = useParams()
     const apiId = params.apiId
-    const modelName = params.modelName
+    const modelId = params.modelId
+    // console.log("params", params)
 
     const deleteModel = async () => {
         const confirmDelete = confirm("Are you sure you want to delete this model? This action cannot be undone.")
         if (!confirmDelete) return;
-        const res = await fetch(`${hostUrl}/api/v1/my_api/${params.apiId}/delete_model/${params.modelName}`, {
+        const res = await fetch(`${hostUrl}/api/v1/my_api/${params.apiId}/delete_model/${params.modelId}`, {
                         method: "DELETE",
                         headers: {
                             "Content-Type": "application/json",
@@ -38,7 +39,7 @@ const Index = () => {
     const truncateTable = async () => {
         const confirmTruncate = confirm("Are you sure you want to truncate this model's table? This means all data in the table will be permanently deleted. This action cannot be undone.")
         if (!confirmTruncate) return;
-        const res = await fetch(`${hostUrl}/api/v1/my_api/${params.apiId}/truncate_model/${params.modelName}`, {
+        const res = await fetch(`${hostUrl}/api/v1/my_api/${params.apiId}/truncate_model/${params.modelId}`, {
                         method: "DELETE",   
                         headers: {
                             "Content-Type": "application/json",
@@ -46,15 +47,15 @@ const Index = () => {
                         }, 
                     })
         if (res.status === 204) {
-            fetchModel(apiId, modelName)
+            fetchModel(apiId, modelId)
             alert("Model table truncated successfully")
 
         }
     }
 
     useEffect(() => {
-        fetchModel(apiId, modelName)
-    }, [apiId, modelName])
+        fetchModel(apiId, modelId)
+    }, [apiId, modelId, fetchModel])
 
     if (loading) {
         return <div className="loading-wrapper">
@@ -123,7 +124,7 @@ const Index = () => {
                         <button style={{ backgroundColor: "red" }} onClick={truncateTable}>Truncate Table</button>
                         <button style={{ backgroundColor: "red" }} onClick={deleteModel}>Delete Model</button>
                     </section>
-                    <SeedPopup openSeedPopup={openSeedPopup} user={user} model={model} setOpenSeedPopup={setOpenSeedPopup} refetchModel={() => fetchModel(apiId, modelName)}/>
+                    <SeedPopup openSeedPopup={openSeedPopup} user={user} model={model} setOpenSeedPopup={setOpenSeedPopup} refetchModel={() => fetchModel(apiId, modelId)}/>
                 </>
             }
 

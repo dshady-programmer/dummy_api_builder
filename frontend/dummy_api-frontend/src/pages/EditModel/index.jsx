@@ -8,7 +8,7 @@ const Index = () => {
     const { fetchModel, model, loading } = useContext(AppContext)
     const params = useParams()
     const apiId = params.apiId
-    const modelName = params.modelName
+    const modelId = params.modelId
     let mParam = {
         name: "",
         description: "",
@@ -22,14 +22,14 @@ const Index = () => {
         }
     }
     useEffect(() => {
-        fetchModel(apiId, modelName)
-    }, [apiId, modelName])
+        fetchModel(apiId, modelId)
+    }, [apiId, modelId, fetchModel])
     return (
         <>
             {
                 loading ? <div className="loading-wrapper"><Bars height="80" width="80" color="#44859F" ariaLabel="bars-loading"
                     wrapperStyle={{}} wrapperClass="loading_element" visible={true} /> </div> : !loading && !model ? <ErrorElement /> : model ?
-                        <ModelForm fList={model.table_params.map(p => p.index)} mParam={mParam} title={"EDIT MODEL"} btnTitle="EDIT" method="PUT" endpoint={`update_model/${modelName}`} />
+                        <ModelForm fList={model.table_params.map(p => p.index)} mParam={mParam} title={"EDIT MODEL"} btnTitle="EDIT" method="PUT" endpoint={`update_model/${modelId}`} />
                         : ""
             }
         </>

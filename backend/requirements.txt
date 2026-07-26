@@ -8,3 +8,4 @@ Flask-Migrate
 bleach>=6.0.0
 redis
 Flask-Caching
+sqlalchemy

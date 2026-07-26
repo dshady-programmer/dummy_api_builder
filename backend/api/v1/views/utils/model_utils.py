@@ -1,4 +1,4 @@
-from models import TableParameter,Api, Entry, Table,Constraint, Relationship, ForeignKeyFieldReferenceTable, db
+from models import db, TableParameter,Api, Entry, Table,Constraint, Relationship, ForeignKeyFieldReferenceTable, db
 from .validate import (
     validate_constraint, validate_dtType, 
     validate_name, validate_primary_key_dtType, 
@@ -16,7 +16,7 @@ from .model_entry_utils import (
 from .parsers import html_clean_value
 
 
-
+from .cache_utils import delete_cache, api_cache_namespace
 
 
 
@@ -71,7 +71,7 @@ def table_parameter_constraints_checks(
                 # without a default value or a nullable constraint
                 constraints.add("nullable")
 
-        # run the foreign key validation check
+
         if entry_present and not update and "nullable" in constraints and "default" not in constraints:
             # check if only nullable is present 
             # create entries if it's not update
@@ -81,7 +81,8 @@ def table_parameter_constraints_checks(
 
 
     if "default" in constraints:
-
+        if "nullable" in constraints:
+            constraints.remove("nullable")
         if "primary_key" not in constraints:
             if not param_default_value:
                 raise Exception({'error': 'Default constraint requires a default value to be provided'})
@@ -109,6 +110,7 @@ def table_parameter_constraints_checks(
 
         else:
             # if it has primary key then the backend auto generates keys
+            table_param.default_value = None # Ignore whatever value was set
             if "foreign_key" in constraints:
                 # default, primary_key and foreign key constraints can't coexist (primary_key + default autogenerates unique values can cause unintended values with foreign key)
                 raise Exception({"error": "A default primary key field can't also have a foreign key constraint"})
@@ -163,6 +165,10 @@ def check_and_validate_tableparameter(
             if entry_present and update:
                 if prev_constraints and "foreign_key" in prev_constraints:
                     if "default" in constraints:
+                        """
+                        Don't bother running default validator check if the new default value is the same as the old
+                        Provided the field remains a foreign key from previous update.
+                        """
                         if prev_default_value and prev_default_value == param_default_value:
                             run_update = False 
                     else:
@@ -180,8 +186,9 @@ def check_and_validate_tableparameter(
         if const == "primary_key":
             primary_key_present = True
             table_param.primary_key = True
-        
-        get_c = Constraint.query.filter_by(name=const).first()
+
+        get_c = db.session.scalar(db.select(Constraint).filter_by(name=const))
+    
         if get_c:
             table_param.constraints.append(get_c)
         else:
@@ -204,9 +211,9 @@ def create_table_parameter(param, table, tableparam_names, user, entry_present):
     if param_name in tableparam_names:
         # First check if the table param of such name already exist on the table
         """
-        This check is done for events where table attribute is passed 2ce in the list
-        just like there can't be two model attribute of the same name
-        like you can't have 
+        This check is done for events where table parameter is passed 2ce in the list
+        just like there can't be two model columns of the same name
+        e.g you can't have 
         name=String()
         and then..
         name = Integer()
@@ -224,11 +231,12 @@ def create_table_parameter(param, table, tableparam_names, user, entry_present):
         raise Exception({"error": "invalid name(must be a valid python identifier) and not a python keyword"})
     try:
         if param_dt_length and param_dt in ["string", "text"]: # if maximum length is set for the model field
-            param_dt_length = int(param_dt_length)
+            # Ths would later be extended to data types like integer and decimals.
+            param_dt_length = abs(int(param_dt_length))
         else:
             param_dt_length = None
     except ValueError: 
-        # In the case the param_dt_length passed is not an integer
+        # In case the param_dt_length passed is not an integer
         param_dt_length = None
 
     # If everything goes perfectly go ahead and create the model field relating to the user table/model and the api
@@ -258,18 +266,20 @@ def update_table_parameter(param,table, tableparam, tableparam_names, user, entr
    
     
 
-    # check update the param name
+    # check & update the param name
     if param_name:
         if param_name not in tableparam_names and validate_name(param_name):
             tableparam.name = param_name
             tableparam_names.add(param_name)
 
     if param_dt and validate_dtType(param_dt):
+        if entry_present and tableparam.data_type.name != param_dt and param_dt not in ["string", "text"]:
+            raise Exception({"error": f"'{tableparam.name}' table parameter data type can't be changed from {tableparam.data_type.name} to {param_dt} with rows present in the table"})
         tableparam.data_type = param_dt
     
     if param_dt_length and param_dt in ["string", "text"]:
         try:
-            param_dt_length = int(param_dt_length)
+            param_dt_length = abs(int(param_dt_length))
             tableparam.dataType_length = param_dt_length
         except ValueError:
             pass
@@ -318,6 +328,8 @@ def parse_and_create_tableparameters(table_parameters, new_table, user):
         return {"error": "Something went wrong"}
     
     else:
+        key = f"{api_cache_namespace(user.id, new_table.api_id)}:detail"
+        delete_cache(key)
         db.session.commit()
         return {"id": new_table.id, "name": new_table.name, "desc": new_table.description}
 

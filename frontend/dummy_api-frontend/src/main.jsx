@@ -65,11 +65,11 @@ const router = createBrowserRouter([
         element: <RequireAuth><CreateModel /></RequireAuth>
       },
       {
-        path: ":apiId/model/:modelName",
+        path: ":apiId/model/:modelId",
         element: <RequireAuth><ModelPage /></RequireAuth>
       },
       {
-        path: ":apiId/model/:modelName/edit",
+        path: ":apiId/model/:modelId/edit",
         element: <RequireAuth><EditModel /></RequireAuth>
       }
 

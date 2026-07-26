@@ -23,9 +23,10 @@ class Constraint(db.Model):
         id: autoincrement, model primary key
         name: Name of the constraint (can either be foreign_key, unique, nullable, primary_key, default)
              nullable and default are mutually exclusive. A table parameter can either be nullable or have a default value, but not both.
-             nullable and unique are mutually exclusive. A table parameter can either be nullable or unique, but not both.
+             nullable and unique are mutually inclusive. A table parameter is allowed be nullable and unique,
+                    but would mean whenever you add a value it must be unique.
             
-            same goes for unique and default. 
+            for unique and default. 
                 A table parameter can either be unique or have a default value, but not both.
                         exception is primary key as the default value is generated automatically for primary keys 
                             and uniqueness would be guaranteed
