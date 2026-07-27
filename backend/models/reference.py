@@ -16,7 +16,7 @@ class ForeignKeyFieldReferenceTable(db.Model):
     """
     __tablename__ = 'foreignkeyfieldreferencetable'
     id = db.Column(db.Integer, primary_key=True)
-    table_id = db.Column(db.Integer, db.ForeignKey('table.id'), unique=True) # one to one relationship with table
+    table_id = db.Column(db.Integer, db.ForeignKey('table.id', ondelete='CASCADE'), unique=True) # one to one relationship with table
     table_reference = db.relationship('Table', back_populates='reference')
-    table_parameter_references = db.relationship('TableParameter', backref='foreign_key_reference_table', cascade='all, delete-orphan, delete', passive_deletes=True)
-    relationship_references = db.relationship('Relationship', backref='foreign_key_rel', cascade='all, delete-orphan, delete', passive_deletes=True)
+    table_parameter_references = db.relationship('TableParameter', backref='foreign_key_reference_table', cascade='all, delete-orphan', passive_deletes=True) # Deleting the Parent table automatically deletes all the table parameters associated with it on all child tables
+    relationship_references = db.relationship('Relationship', backref='foreign_key_rel', cascade='all, delete-orphan', passive_deletes=True)

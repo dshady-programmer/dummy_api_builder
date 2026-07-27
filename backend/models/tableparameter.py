@@ -74,10 +74,10 @@ class TableParameter(db.Model):
     name = db.Column(db.String, nullable=False)
     data_type = db.Column(db.Enum(DataTypes), default=DataTypes.string, nullable=False)
     primary_key = db.Column(db.Boolean, default=False) 
-    foreign_key_reference_id = db.Column(db.Integer, db.ForeignKey('foreignkeyfieldreferencetable.id'), nullable=True) 
+    foreign_key_reference_id = db.Column(db.Integer, db.ForeignKey('foreignkeyfieldreferencetable.id', ondelete='CASCADE'), nullable=True) 
     dataType_length = db.Column(db.Integer, nullable=True) # Only valid for strings, text, integers
     default_value = db.Column(db.Text, nullable=True) # for default values
-    table_id = db.Column(db.Integer, db.ForeignKey('table.id'))
+    table_id = db.Column(db.Integer, db.ForeignKey('table.id', ondelete='CASCADE'))
     table = db.relationship('Table', back_populates='table_parameters')
-    constraints = db.relationship('Constraint', secondary=parameter_constraints, backref='table_parameters', cascade="all, delete", passive_deletes=True)
-    entries = db.relationship('Entry', back_populates='tableparameter', cascade="all, delete-orphan, delete")
+    constraints = db.relationship('Constraint', secondary=parameter_constraints, backref='table_parameters')
+    entries = db.relationship('Entry', back_populates='tableparameter', cascade="all, delete-orphan", passive_deletes=True)

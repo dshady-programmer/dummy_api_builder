@@ -28,8 +28,8 @@ class User(db.Model):
     email = db.Column(db.String(100), unique=True, nullable=False)
     api_token = db.Column(db.String(100), unique=True)
     password = db.Column(db.String(100), nullable=False)
-    user_apis = db.relationship('Api', back_populates='user')
-    user_limit_ref = db.relationship('UserLimit', back_populates='user_ref', uselist=False, cascade="all, delete-orphan, delete")
+    user_apis = db.relationship('Api', back_populates='user', cascade="all, delete-orphan", passive_deletes=True)
+    user_limit_ref = db.relationship('UserLimit', back_populates='user_ref', uselist=False, cascade="all, delete-orphan", passive_deletes=True)
     
 
     def __str__(self):
@@ -49,7 +49,7 @@ class UserLimit(db.Model):
         check_constraint: Ensure current_rows does not exceed max_rows
     """
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), unique=True, nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='CASCADE'), unique=True, nullable=False)
     user_ref = db.relationship('User', back_populates='user_limit_ref')
     current_rows = db.Column(db.Integer, nullable=False, default=0)
     max_rows = db.Column(db.Integer, nullable=False, default=MAX_ROW_FOR_USER)

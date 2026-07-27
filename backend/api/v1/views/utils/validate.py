@@ -55,6 +55,7 @@ def validate_dtType(type):
         "string",
         "text",
         "integer",
+        "decimal",
         "boolean",
         "date",
         "datetime"

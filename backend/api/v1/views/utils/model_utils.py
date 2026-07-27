@@ -31,6 +31,7 @@ def table_parameter_constraints_checks(
     if "primary_key" in constraints:
         if entry_present:
             if not update or (update and "primary_key" not in prev_constraints) :
+                print('update', prev_constraints)
                 raise Exception({"error": "Can't add new primary key field to a table with already existing data."})
             
         constraints.add("unique") # add unique to constraint if it's a primary key.
@@ -193,6 +194,8 @@ def check_and_validate_tableparameter(
             table_param.constraints.append(get_c)
         else:
             table_param.constraints.append(Constraint(name=const))
+    if "foreign_key" not in constraints and table_param.foreign_key_reference_id is not None:
+        table_param.foreign_key_reference_id = None
     return primary_key_present
 
 def create_table_parameter(param, table, tableparam_names, user, entry_present):
@@ -275,6 +278,10 @@ def update_table_parameter(param,table, tableparam, tableparam_names, user, entr
     if param_dt and validate_dtType(param_dt):
         if entry_present and tableparam.data_type.name != param_dt and param_dt not in ["string", "text"]:
             raise Exception({"error": f"'{tableparam.name}' table parameter data type can't be changed from {tableparam.data_type.name} to {param_dt} with rows present in the table"})
+        elif entry_present and tableparam.data_type.name != param_dt and "primary_key" in tableparam.constraints:
+            # it affects foreign key relationships.
+            # would check if i can improve this..
+            raise Exception({"error": "You can't change the data type of a primary key on a table with rows"})
         tableparam.data_type = param_dt
     
     if param_dt_length and param_dt in ["string", "text"]:
@@ -318,7 +325,7 @@ def parse_and_create_tableparameters(table_parameters, new_table, user):
         if not primary_key_present:
             raise Exception({"error": "Table must contain atleast one primary key"})
     except Exception as e:
-        # print(e)
+        print(e)
         # import traceback
         # traceback.print_exc()
         error = e.args[0]

@@ -37,7 +37,7 @@ class EntryList(db.Model):
     __tablename__ = 'entrylist'
     id = db.Column(db.Integer, primary_key=True)
     primary_key_value = db.Column(db.Text)
-    entries = db.relationship('Entry', back_populates='entry_list', cascade="all, delete-orphan, delete")
-    table_id = db.Column(db.Integer, db.ForeignKey('table.id')) 
+    entries = db.relationship('Entry', back_populates='entry_list', cascade="all, delete-orphan", passive_deletes=True)
+    table_id = db.Column(db.Integer, db.ForeignKey('table.id', ondelete='CASCADE')) 
     table = db.relationship('Table', back_populates='entry_lists')
     

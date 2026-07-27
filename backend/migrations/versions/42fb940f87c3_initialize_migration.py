@@ -1,8 +1,8 @@
 """initialize migration
 
-Revision ID: 0217a968563c
+Revision ID: 42fb940f87c3
 Revises: 
-Create Date: 2026-07-18 15:27:26.259524
+Create Date: 2026-07-27 21:16:50.053587
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = '0217a968563c'
+revision = '42fb940f87c3'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -41,7 +41,7 @@ def upgrade():
     sa.Column('name', sa.String(), nullable=False),
     sa.Column('description', sa.Text(), nullable=True),
     sa.Column('user_id', sa.Integer(), nullable=True),
-    sa.ForeignKeyConstraint(['user_id'], ['user.id'], ),
+    sa.ForeignKeyConstraint(['user_id'], ['user.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_table('user_limit',
@@ -50,7 +50,7 @@ def upgrade():
     sa.Column('current_rows', sa.Integer(), nullable=False),
     sa.Column('max_rows', sa.Integer(), nullable=False),
     sa.CheckConstraint('current_rows <= max_rows', name='check_current_rows_not_exceed_max_rows'),
-    sa.ForeignKeyConstraint(['user_id'], ['user.id'], ),
+    sa.ForeignKeyConstraint(['user_id'], ['user.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('user_id')
     )
@@ -59,20 +59,20 @@ def upgrade():
     sa.Column('name', sa.String(), nullable=False),
     sa.Column('description', sa.Text(), nullable=True),
     sa.Column('api_id', sa.Integer(), nullable=True),
-    sa.ForeignKeyConstraint(['api_id'], ['api.id'], ),
+    sa.ForeignKeyConstraint(['api_id'], ['api.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_table('entrylist',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('primary_key_value', sa.Text(), nullable=True),
     sa.Column('table_id', sa.Integer(), nullable=True),
-    sa.ForeignKeyConstraint(['table_id'], ['table.id'], ),
+    sa.ForeignKeyConstraint(['table_id'], ['table.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_table('foreignkeyfieldreferencetable',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('table_id', sa.Integer(), nullable=True),
-    sa.ForeignKeyConstraint(['table_id'], ['table.id'], ),
+    sa.ForeignKeyConstraint(['table_id'], ['table.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('table_id')
     )
@@ -81,8 +81,8 @@ def upgrade():
     sa.Column('entry_ref_pk', sa.String(), nullable=False),
     sa.Column('foreign_key_rel_id', sa.Integer(), nullable=True),
     sa.Column('child_table_id', sa.Integer(), nullable=True),
-    sa.ForeignKeyConstraint(['child_table_id'], ['table.id'], ),
-    sa.ForeignKeyConstraint(['foreign_key_rel_id'], ['foreignkeyfieldreferencetable.id'], ),
+    sa.ForeignKeyConstraint(['child_table_id'], ['table.id'], ondelete='CASCADE'),
+    sa.ForeignKeyConstraint(['foreign_key_rel_id'], ['foreignkeyfieldreferencetable.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_table('tableparameter',
@@ -94,8 +94,8 @@ def upgrade():
     sa.Column('dataType_length', sa.Integer(), nullable=True),
     sa.Column('default_value', sa.Text(), nullable=True),
     sa.Column('table_id', sa.Integer(), nullable=True),
-    sa.ForeignKeyConstraint(['foreign_key_reference_id'], ['foreignkeyfieldreferencetable.id'], ),
-    sa.ForeignKeyConstraint(['table_id'], ['table.id'], ),
+    sa.ForeignKeyConstraint(['foreign_key_reference_id'], ['foreignkeyfieldreferencetable.id'], ondelete='CASCADE'),
+    sa.ForeignKeyConstraint(['table_id'], ['table.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_table('entry',
@@ -103,8 +103,8 @@ def upgrade():
     sa.Column('value', sa.Text(), nullable=True),
     sa.Column('tableparameter_id', sa.Integer(), nullable=True),
     sa.Column('entry_list_id', sa.Integer(), nullable=True),
-    sa.ForeignKeyConstraint(['entry_list_id'], ['entrylist.id'], ),
-    sa.ForeignKeyConstraint(['tableparameter_id'], ['tableparameter.id'], ),
+    sa.ForeignKeyConstraint(['entry_list_id'], ['entrylist.id'], ondelete='CASCADE'),
+    sa.ForeignKeyConstraint(['tableparameter_id'], ['tableparameter.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_table('entrylist_relationships',

@@ -9,7 +9,7 @@ from api.v1.auth.auth import login_required
 from models import db, Api, Table, TableParameter, EntryList, Relationship
 from .utils.validate import validate_name
 from .utils.model_utils import parse_and_create_tableparameters, parse_and_update_tableparameters
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, joinedload
 from .utils.cache_utils import (
     get_cache, set_cache, delete_cache, 
     api_cache_namespace, multiple_key_delete
@@ -183,20 +183,10 @@ def delete_model(user, api_id, model_id):
     api = db.session.scalar(api_stmt)
     if not api:
         return jsonify({"error": "no api of such is associated with the user"}),400
-    table_stmt = db.select(Table).filter_by(id=model_id, api_id=api_id).options(selectinload(Table.table_parameters))
+    table_stmt = db.select(Table).filter_by(id=model_id, api_id=api_id)
     t = db.session.scalar(table_stmt)
-    tbl_ps = t.table_parameters
-    for tp in tbl_ps:
-        tp.constraints.clear()
-    # db.session.delete(t.reference)
-    rels = Relationship.query.filter_by(foreign_key_rel_id=t.reference.id)
-    for r in rels:
-        r.entrylists.clear()
-        db.session.delete(r)
-    rels_child = Relationship.query.filter_by(child_table_id=t.id)
-    for rc in rels_child:
-        rc.entrylists.clear()
-        db.session.delete(rc)
+    if not t:
+        return jsonify({"error": "Table doesn't exist"}), 400
     db.session.delete(t)
 
     
@@ -213,25 +203,23 @@ def delete_model(user, api_id, model_id):
 @app_views.route('/my_api/<api_id>/truncate_model/<model_id>', methods=["DELETE"])
 @login_required
 def truncate_model(user, api_id, model_id):
+    from models.relationship import entrylist_relationships
     api_stmt = db.select(Api).filter_by(id=api_id, user_id=user.id)
     api = db.session.scalar(api_stmt)
     if not api:
         return jsonify({"error": "no api of such is associated with the user"}),400
-    table_stmt = db.select(Table).filter_by(id=model_id, api_id=api_id).options(selectinload(Table.entry_lists))
+    table_stmt = db.select(Table).filter_by(id=model_id, api_id=api_id).options(joinedload(Table.reference))
     t = db.session.scalar(table_stmt)
+    if not t:
+        return jsonify({"error": "Table doesn't exist"}), 400
 
-    entrylists = t.entry_lists
-    for e_list in entrylists:
-        db.session.delete(e_list)
+    entrylist_stmt = db.delete(EntryList).filter_by(table_id=t.id)
 
-    rels = Relationship.query.filter_by(foreign_key_rel_id=t.reference.id)
-    for r in rels:
-        r.entrylists.clear()
-        db.session.delete(r)
-    rels_child = Relationship.query.filter_by(child_table_id=t.id)
-    for rc in rels_child:
-        rc.entrylists.clear()
-        db.session.delete(rc)
+    db.session.execute(entrylist_stmt)
+
+    parent_rels = db.delete(Relationship).filter_by(foreign_key_rel_id=t.reference.id)
+
+    db.session.execute(parent_rels)
 
     num_entries = f"{api_cache_namespace(user.id, api_id)}:model:{model_id}:num_of_entries"
     set_cache(num_entries, 0)

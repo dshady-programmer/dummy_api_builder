@@ -21,7 +21,15 @@ from sqlalchemy.orm import selectinload
 @app_views.route('/my_apis')
 @login_required
 def my_api_list(user):
-    # print("foreign key scalar", db.session.execute(db.text("PRAGMA foreign_keys")).scalar())
+    # from models.tableparameter import parameter_constraints
+    # s = db.delete(parameter_constraints).where(parameter_constraints.c.tableparameter_id.in_([7,8,9]))
+    # db.session.execute(s)
+    # db.session.commit()
+    # from models import ForeignKeyFieldReferenceTable
+    # s = db.delete(ForeignKeyFieldReferenceTable).where(ForeignKeyFieldReferenceTable.table_id.in_([4]))
+    # db.session.execute(s)
+    # db.session.commit()
+    print("foreign key scalar", db.session.execute(db.text("PRAGMA foreign_keys")).scalar())
     key = f"{user_cache_namespace(user.id)}:apis"
     cached_data = get_cache(key)
 
