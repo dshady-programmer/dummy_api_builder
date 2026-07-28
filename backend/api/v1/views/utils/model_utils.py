@@ -5,7 +5,8 @@ from .validate import (
     validate_entry_value, validate_entry_value_length,
     unique_constraints_validator, foreign_key_ref_table_validator,
     validate_foreign_key_default_value,
-    foreign_key_constraints_validator
+    foreign_key_constraints_validator,
+    validate_and_update_pk_fk_parent_lock
 )
 
 from .model_entry_utils import (
@@ -119,7 +120,10 @@ def table_parameter_constraints_checks(
         # for update: update the existing entries to reflect the default value if not already existing (latest default value) 
         # create entries with the latest default values.
         
-    
+    if "foreign_key" not in constraints and table_param.foreign_key_reference_id is not None:
+        table_param.foreign_key_reference_id = None
+
+    validate_and_update_pk_fk_parent_lock(constraints, prev_constraints, table_param)
 
 
 
@@ -194,8 +198,7 @@ def check_and_validate_tableparameter(
             table_param.constraints.append(get_c)
         else:
             table_param.constraints.append(Constraint(name=const))
-    if "foreign_key" not in constraints and table_param.foreign_key_reference_id is not None:
-        table_param.foreign_key_reference_id = None
+
     return primary_key_present
 
 def create_table_parameter(param, table, tableparam_names, user, entry_present):
@@ -285,8 +288,23 @@ def update_table_parameter(param,table, tableparam, tableparam_names, user, entr
         tableparam.data_type = param_dt
     
     if param_dt_length and param_dt in ["string", "text"]:
+
         try:
             param_dt_length = abs(int(param_dt_length))
+            if entry_present and tableparam.dataType_length > param_dt_length:
+                # If an entry is present compare the new datatype_length with the previous
+                # previous mustn't be greater than new datatype_length
+                # why? because reducing it might mean you might be violating some constraints..
+                # It lazily just prevents you rather than validating each data against the new length which might be extra work
+                raise Exception({"error": "You can't set your new max length to be less than the previous max length because there are entries/rows in this table"})
+
+            if not param_dt_length:
+                # In the case of 0 just set it to none..
+                # What good is a field if the max length is 0?
+                # None being no constraints
+                tableparam.dataType_length = None
+                raise ValueError
+        
             tableparam.dataType_length = param_dt_length
         except ValueError:
             pass

@@ -170,6 +170,11 @@ def validate_primary_key_dtType(data_type):
         return False
     return True
 
+def validate_foreign_key_dType(data_type):
+    VALID_FOREIGN_KEY_DATATYPES = ["string", "text"]
+    if data_type not in VALID_FOREIGN_KEY_DATATYPES:
+        return False
+    return True
 
 def unique_constraints_validator(table_param, nullable=False):
     from models import Entry, db
@@ -239,9 +244,12 @@ def foreign_key_ref_table_validator(table_param, param_dt, param, user):
     
     from models import db, Api, Table, ForeignKeyFieldReferenceTable
 
-    if not validate_primary_key_dtType(param_dt): # since foreign key would always reference a primary key from the parent table.. it should conform with the valid pk data types
-        # you can use a foreign with the data type int, string or text. It doesn't have to tie strictly to the parent table primary key field datatype
-        raise Exception({"error": "Foreign key data type must be either text, string or integer"})
+    if not validate_foreign_key_dType(param_dt): # since foreign key would always reference a primary key from the parent table.. it should conform with the valid pk data types(excluding integers)
+        # you can use a foreign with the data type string or text. It doesn't have to tie strictly to the parent table primary key field datatype
+        # int is excluding because if the parent table type is a string (uuid for example) and the child table is set to be an int data type
+                # then there's no way a uuid string would ever be coerced to an integer
+        raise Exception({"error": "Foreign key data type must be either text or string"})
+    table_param.dataType_length = None # no restriction to the maximum length to avoid any complications
     fk_rf = param.get("foreign_key_rf") #expected format(api.table)
     if not fk_rf:
         raise Exception({"error": "Expected a foreign key reference field."})
@@ -291,4 +299,47 @@ def validate_foreign_key_default_value(
 
         elif update and run_update:
             update_default_value_entries(table_param, default_value, True)
+
+
+def validate_and_update_pk_fk_parent_lock(constraints, prev_constraints, table_param):
+    """
+        When a foreign key field is also set as the primary key field there's need to lock the parent table
+            To prevent deletion of the child field when the parent table is deleted.
+        
+        The lock acts like a ondelete="PROTECT"
+    """
+    from models import TableParameter
+    from sqlalchemy.exc import OperationalError
+
+    if all(["foreign_key" not in constraints, "foreign_key" not in prev_constraints]):
+        return None
+
+    tp_fk_ref_table = table_param.foreign_key_reference_table
+
+    if "foreign_key" in constraints and "primary_key" in constraints:
+        tp_fk_ref_table.table_reference.is_locked = True
+
+    if "foreign_key" in prev_constraints and "primary_key" in prev_constraints:
+        if "primary_key" not in constraints or "foreign_key" not in constraints:
+            # first check if there are no longer tableparameter field with primary key still referencing the parent table 
+            # tp_stmt = db.select(TableParameter.id).where(
+            #     TableParameter.id != table_param.id, # exclude this due to uncommitted changes
+            #     TableParameter.foreign_key_reference_id == tp_fk_ref_table.id,
+            #     TableParameter.primary_key == True
+            #     # same as using the _and() or & 
+            #  ).exists() # possible race condition
+            try:
+                tp_stmt = (
+                    db.select(TableParameter.id).where(
+                        TableParameter.id != table_param.id, # exclude this due to uncommitted changes
+                        TableParameter.foreign_key_reference_id == tp_fk_ref_table.id,
+                        TableParameter.primary_key == True
+                    ).with_for_update(nowait=True)
+                )
+                tp_row = db.session.scalar(tp_stmt)
+            except OperationalError:
+                raise Exception({"error": "Request already in progress, try again"})
+
             
+            tp_fk_ref_table.table_reference.is_locked = tp_row is not None
+        

@@ -25,13 +25,17 @@ class Table(db.Model):
 
 
         reference: Relationship to the ForeignKeyFieldReferenceTable model for back reference (table.reference gives the foreign key reference for the table)
+        is_locked: Determines whether an api is allowed to be deleted or not
+            This happens when the api is referenced by another table usually as a foreign key 
+            and that foreign key field is a primary key on that table.
     """
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String, nullable=False)
     description = db.Column(db.Text)
-    api_id = db.Column(db.Integer, db.ForeignKey('api.id', ondelete='CASCADE'))
+    api_id = db.Column(db.Integer, db.ForeignKey('api.id'))
     api = db.relationship('Api', back_populates='tables')
     table_parameters = db.relationship('TableParameter', back_populates='table', cascade="all, delete-orphan", passive_deletes=True)
     reference = db.relationship('ForeignKeyFieldReferenceTable', back_populates='table_reference', cascade='all, delete-orphan', uselist=False, passive_deletes=True)
     entry_lists = db.relationship('EntryList', back_populates='table', cascade="all, delete-orphan", passive_deletes=True)
     reverse_relationships = db.relationship('Relationship', backref='child_table', cascade="all, delete-orphan", passive_deletes=True)
+    is_locked = db.Column(db.Boolean, default=False) 

@@ -135,7 +135,11 @@ def delete_api(user, id):
     if not api:
         return jsonify({"error": "api doesn't exist"}), 400
     db.session.delete(api)
-    db.session.commit()
+    try:
+        db.session.commit()
+    except ValueError as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)})
     list_key = f"{user_cache_namespace(user.id)}:apis"
     detail_key = f"{api_cache_namespace(user.id, api.id)}:detail"
     multiple_key_delete([list_key, detail_key])

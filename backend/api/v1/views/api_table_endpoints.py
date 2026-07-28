@@ -79,7 +79,11 @@ def update_model(user, api_id, model_id):
         return jsonify({"error": "no api of such is associated with the user"}), 400
     table_stmt = db.select(Table).filter_by(id=model_id, api_id=api_id)\
                                                 .options(selectinload(Table.table_parameters)\
-                                                .selectinload(TableParameter.constraints))
+                                                .selectinload(TableParameter.constraints),
+                                                selectinload(Table.table_parameters)\
+                                                .joinedload(TableParameter.foreign_key_reference_table)
+
+                                                )
     table = db.session.scalar(table_stmt)
 
     if not table:
@@ -188,18 +192,23 @@ def delete_model(user, api_id, model_id):
     if not t:
         return jsonify({"error": "Table doesn't exist"}), 400
     db.session.delete(t)
+    try:
+        db.session.commit()
+    except ValueError as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)})
 
     
     table_cache_key = f"{api_cache_namespace(user.id, api_id)}:model:{t.id}"
     num_entries = f"{api_cache_namespace(user.id, api_id)}:model:{t.id}:num_of_entries"
     api_cache_key = f"{api_cache_namespace(user.id, api_id)}:detail"
     multiple_key_delete([table_cache_key, num_entries, api_cache_key])
-    db.session.commit()
+   
     return jsonify(''), 204
 
 
 
-
+ 
 @app_views.route('/my_api/<api_id>/truncate_model/<model_id>', methods=["DELETE"])
 @login_required
 def truncate_model(user, api_id, model_id):

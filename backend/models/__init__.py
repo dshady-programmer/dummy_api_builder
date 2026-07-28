@@ -12,3 +12,4 @@ from .reference import *
 from .events.table_events import *
 from .events.user_events import *
 from .events.pragma_fk_on import *
+from .events.prevent_delete import *
