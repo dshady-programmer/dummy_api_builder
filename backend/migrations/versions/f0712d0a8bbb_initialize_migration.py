@@ -1,8 +1,8 @@
 """initialize migration
 
-Revision ID: 5aeb9b1c0aa4
+Revision ID: f0712d0a8bbb
 Revises: 
-Create Date: 2026-07-28 21:58:36.760794
+Create Date: 2026-07-30 19:14:47.635678
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = '5aeb9b1c0aa4'
+revision = 'f0712d0a8bbb'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -59,8 +59,7 @@ def upgrade():
     sa.Column('name', sa.String(), nullable=False),
     sa.Column('description', sa.Text(), nullable=True),
     sa.Column('api_id', sa.Integer(), nullable=True),
-    sa.Column('is_locked', sa.Boolean(), nullable=True),
-    sa.ForeignKeyConstraint(['api_id'], ['api.id'], ),
+    sa.ForeignKeyConstraint(['api_id'], ['api.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_table('entrylist',

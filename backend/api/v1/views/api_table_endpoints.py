@@ -8,7 +8,11 @@ from flask import request, jsonify
 from api.v1.auth.auth import login_required
 from models import db, Api, Table, TableParameter, EntryList, Relationship
 from .utils.validate import validate_name
-from .utils.model_utils import parse_and_create_tableparameters, parse_and_update_tableparameters
+from .utils.model_utils import (
+    parse_and_create_tableparameters, 
+    parse_and_update_tableparameters,
+    delete_table
+)
 from sqlalchemy.orm import selectinload, joinedload
 from .utils.cache_utils import (
     get_cache, set_cache, delete_cache, 
@@ -187,17 +191,15 @@ def delete_model(user, api_id, model_id):
     api = db.session.scalar(api_stmt)
     if not api:
         return jsonify({"error": "no api of such is associated with the user"}),400
-    table_stmt = db.select(Table).filter_by(id=model_id, api_id=api_id)
+    table_stmt = db.select(Table).filter_by(id=model_id, api_id=api_id).options(joinedload(Table.reference))
     t = db.session.scalar(table_stmt)
     if not t:
         return jsonify({"error": "Table doesn't exist"}), 400
-    db.session.delete(t)
-    try:
-        db.session.commit()
-    except ValueError as e:
-        db.session.rollback()
-        return jsonify({'error': str(e)})
 
+    # delete table but with a check on relationships
+    status, msg = delete_table(t)
+    if not status:
+        return jsonify(msg), 400
     
     table_cache_key = f"{api_cache_namespace(user.id, api_id)}:model:{t.id}"
     num_entries = f"{api_cache_namespace(user.id, api_id)}:model:{t.id}:num_of_entries"

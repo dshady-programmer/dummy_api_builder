@@ -4,11 +4,22 @@ of validation check helper functions.
 """
 from ast import literal_eval
 
+from models import (
+    db, Entry, Relationship,
+    Api, Table, EntryList,
+    ForeignKeyFieldReferenceTable
+)
+from dateutil.parser import parse
+import datetime
+from sqlalchemy.orm import selectinload
+import keyword
+import uuid
+import secrets
+
+
+
 
 def autogenerate_keys(tb_param):
-    import uuid
-    import secrets
-    from models import Entry
     datatype = tb_param.data_type.name 
     value = None
 
@@ -65,20 +76,17 @@ def validate_dtType(type):
     return True
 
 
-def validate_name(name):
+def validate_name(name, tableparameter_field=False):
 
-    import keyword
     if not name:
         return False
-    if type(name) != str or len(name) < 3:
+    if type(name) != str or (not tableparameter_field and len(name) < 3):
         return False
     return name.isidentifier() and not keyword.iskeyword(name)
 
 
 
 def validate_entry_value(value, data_type):
-    from dateutil.parser import parse
-    import datetime
     if not value:
         return False
     value = str(value)
@@ -145,7 +153,6 @@ def validate_entry_constraints(value, tbl_p):
 
     value = str(value)
     if "foreign_key" in consts:
-        from models.entrylist import EntryList
 
         if not fk:
             fk = "fk"
@@ -157,7 +164,6 @@ def validate_entry_constraints(value, tbl_p):
         if not e_li:
             return False, fk, f"Primary key '{value}' referenced for the foreign key doesn't exist on the parent table", default_value
     if "unique" in consts:
-        from models.entry import Entry
         if Entry.query.filter_by(tableparameter_id=tbl_p.id, value=value).first():
             return False, "uniq", f"{value} already exists in the database. It must be unique", default_value
     return True, fk, None, default_value
@@ -177,7 +183,6 @@ def validate_foreign_key_dType(data_type):
     return True
 
 def unique_constraints_validator(table_param, nullable=False):
-    from models import Entry, db
     entry_stmt = db.select(Entry).filter_by(tableparameter_id=table_param.id)
     entries = db.session.scalars(entry_stmt).all()
     entries = table_param.entries # get the entire column of existing values
@@ -201,8 +206,7 @@ def foreign_key_constraints_validator(parent_table, table_param, nullable=False)
         Runs validation on all existing fields and ensure that they are valid keys
 
     """
-    from models import Entry, EntryList, Relationship, db
-    from sqlalchemy.orm import selectinload
+
     entry_stmt = db.select(Entry).filter_by(tableparameter_id=table_param.id)
     entries = db.session.scalars(entry_stmt).all()
     validated_keys = set()
@@ -242,7 +246,6 @@ def foreign_key_constraints_validator(parent_table, table_param, nullable=False)
 
 def foreign_key_ref_table_validator(table_param, param_dt, param, user):
     
-    from models import db, Api, Table, ForeignKeyFieldReferenceTable
 
     if not validate_foreign_key_dType(param_dt): # since foreign key would always reference a primary key from the parent table.. it should conform with the valid pk data types(excluding integers)
         # you can use a foreign with the data type string or text. It doesn't have to tie strictly to the parent table primary key field datatype
@@ -269,6 +272,10 @@ def validate_foreign_key_default_value(
         default_value, entry_present, 
         run_update, update
     ):
+    from .model_entry_utils import (
+        create_default_value_entries, 
+        update_default_value_entries
+    )
     """
         Validate the default value passed against the foreign key table.
 
@@ -280,11 +287,7 @@ def validate_foreign_key_default_value(
         "Company".pk must exist for it to be a valid foreign key.
         
     """
-    from models import db, EntryList
-    from .model_entry_utils import (
-        create_default_value_entries, 
-        update_default_value_entries
-    )
+ 
 
     if not default_value:
         return 
@@ -301,45 +304,43 @@ def validate_foreign_key_default_value(
             update_default_value_entries(table_param, default_value, True)
 
 
-def validate_and_update_pk_fk_parent_lock(constraints, prev_constraints, table_param):
-    """
-        When a foreign key field is also set as the primary key field there's need to lock the parent table
-            To prevent deletion of the child field when the parent table is deleted.
-        
-        The lock acts like a ondelete="PROTECT"
-    """
-    from models import TableParameter
-    from sqlalchemy.exc import OperationalError
 
-    if all(["foreign_key" not in constraints, "foreign_key" not in prev_constraints]):
-        return None
 
-    tp_fk_ref_table = table_param.foreign_key_reference_table
 
-    if "foreign_key" in constraints and "primary_key" in constraints:
-        tp_fk_ref_table.table_reference.is_locked = True
+# def validate_and_update_pk_fk_parent_lock(constraints, prev_constraints, table_param):
 
-    if "foreign_key" in prev_constraints and "primary_key" in prev_constraints:
-        if "primary_key" not in constraints or "foreign_key" not in constraints:
-            # first check if there are no longer tableparameter field with primary key still referencing the parent table 
-            # tp_stmt = db.select(TableParameter.id).where(
-            #     TableParameter.id != table_param.id, # exclude this due to uncommitted changes
-            #     TableParameter.foreign_key_reference_id == tp_fk_ref_table.id,
-            #     TableParameter.primary_key == True
-            #     # same as using the _and() or & 
-            #  ).exists() # possible race condition
-            try:
-                tp_stmt = (
-                    db.select(TableParameter.id).where(
-                        TableParameter.id != table_param.id, # exclude this due to uncommitted changes
-                        TableParameter.foreign_key_reference_id == tp_fk_ref_table.id,
-                        TableParameter.primary_key == True
-                    ).with_for_update(nowait=True)
-                )
-                tp_row = db.session.scalar(tp_stmt)
-            except OperationalError:
-                raise Exception({"error": "Request already in progress, try again"})
+#     from models import TableParameter
+#     from sqlalchemy.exc import OperationalError
+
+#     if all(["foreign_key" not in constraints, "foreign_key" not in prev_constraints]):
+#         return None
+
+#     tp_fk_ref_table = table_param.foreign_key_reference_table
+
+#     if "foreign_key" in constraints and "primary_key" in constraints:
+#         tp_fk_ref_table.table_reference.is_locked = True
+
+#     elif "foreign_key" in prev_constraints and "primary_key" in prev_constraints:
+#         if "primary_key" not in constraints or "foreign_key" not in constraints:
+#             # first check if there are no longer tableparameter field with primary key still referencing the parent table 
+#             # tp_stmt = db.select(TableParameter.id).where(
+#             #     TableParameter.id != table_param.id, # exclude this due to uncommitted changes
+#             #     TableParameter.foreign_key_reference_id == tp_fk_ref_table.id,
+#             #     TableParameter.primary_key == True
+#             #     # same as using the _and() or & 
+#             #  ).exists() # possible race condition
+#             try:
+#                 tp_stmt = (
+#                     db.select(TableParameter.id).where(
+#                         TableParameter.id != table_param.id, # exclude this due to uncommitted changes
+#                         TableParameter.foreign_key_reference_id == tp_fk_ref_table.id,
+#                         TableParameter.primary_key == True
+#                     ).with_for_update(nowait=True)
+#                 )
+#                 tp_row = db.session.scalar(tp_stmt)
+#             except OperationalError:
+#                 raise Exception({"error": "Request already in progress, try again"})
 
             
-            tp_fk_ref_table.table_reference.is_locked = tp_row is not None
+#             tp_fk_ref_table.table_reference.is_locked = tp_row is not None
         

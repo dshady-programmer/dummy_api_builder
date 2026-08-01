@@ -15,6 +15,7 @@ from .utils.cache_utils import (
     delete_cache, multiple_key_delete,
     user_cache_namespace, api_cache_namespace
 )
+from .utils.model_utils import delete_API
 from sqlalchemy.orm import selectinload
 
 
@@ -130,16 +131,17 @@ def update_api_info(user, id):
 @app_views.route('/delete_api/<id>', methods=['DELETE'])
 @login_required
 def delete_api(user, id):
-    stmt = db.select(Api).filter_by(id=id, user_id=user.id)
+    stmt = db.select(Api).filter_by(id=id, user_id=user.id).options(selectinload(Api.tables))
     api = db.session.scalar(stmt)
     if not api:
         return jsonify({"error": "api doesn't exist"}), 400
-    db.session.delete(api)
-    try:
-        db.session.commit()
-    except ValueError as e:
-        db.session.rollback()
-        return jsonify({'error': str(e)})
+
+    # Safe check there's no foreign key + primary key reference before deletion
+    status, msg = delete_API(api)
+
+    if not status:
+        return jsonify(msg), 400
+    
     list_key = f"{user_cache_namespace(user.id)}:apis"
     detail_key = f"{api_cache_namespace(user.id, api.id)}:detail"
     multiple_key_delete([list_key, detail_key])

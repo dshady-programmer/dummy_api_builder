@@ -24,7 +24,12 @@ const Index = () => {
                                 })
         if (res.status === 204) {
             setInvalidate(true)
-        } 
+        } else if (res.status === 400) {
+            const msg = await res.json()
+
+            alert(msg)
+            return
+        }
         navigate('/my_apis')
     }
 
