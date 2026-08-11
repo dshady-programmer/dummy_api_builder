@@ -4,6 +4,7 @@ api
 """
 from . import db
 
+# name and api_id index
 
 class Table(db.Model):
     """

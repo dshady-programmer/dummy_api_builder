@@ -1,18 +1,12 @@
 
 from models import db, Entry, EntryList, Relationship
 from .validate import validate_entry_constraints, validate_entry_value, validate_entry_value_length
-from dateutil.parser import parse
 from .filtering_utils import query_filter
 from .parsers import parse_value, html_clean_value
 from .cache_utils import invalidate_user_cache_api, get_cache, set_cache, set_raw_cache, get_raw_cache
-
-def datetime_repr(entry_value, type):
-    if type == "datetime":
-        return str(parse(entry_value))
-    elif type == "date":
-        return str(parse(entry_value).date())
-    return entry_value
-
+from sqlalchemy.orm import selectinload
+from .parsers import datetime_repr
+import datetime
 
 
 def validate_create_fk_relationships(tbl_p, entry_value, e_list, stat, err_msg):
@@ -20,37 +14,39 @@ def validate_create_fk_relationships(tbl_p, entry_value, e_list, stat, err_msg):
     rel_id = tbl_p.foreign_key_reference_id
     child_table_id = tbl_p.table_id
     if not stat:
-        if not err_msg.startswith('Primary key'):
-            rels = Relationship.query.filter_by(foreign_key_rel_id=rel_id).all() # foreign key reference table is either deleted or updated.
-        else:
-            rels = Relationship.query.filter_by(foreign_key_rel_id=rel_id, entry_ref_pk=entry_value).all()  # check if relationship already has a field referencing the foreign key table row
-            if not rels:
-                rels = None
-        raise Exception({"error": err_msg, "relationships": rels})
+        raise Exception({"error": err_msg})
     else:
         # if everything goes fine.. add the entrylist to a relationship using the foreign key primary key (if not already existing create new one) 
         try:
-            relationship = Relationship.query.filter_by(foreign_key_rel_id = rel_id, entry_ref_pk = entry_value, child_table_id=child_table_id).first() 
+            relationship = db.session.scalar(
+                db.select(Relationship).filter_by(foreign_key_rel_id = rel_id, entry_ref_pk = entry_value, child_table_id=child_table_id)
+            )
             if not relationship:
                 relationship = Relationship(entry_ref_pk=entry_value, foreign_key_rel_id=rel_id, child_table_id=child_table_id)
-                parent_table = tbl_p.foreign_key_reference_table.table_reference
-                invalidate_user_cache_api(None, parent_table.api_id, parent_table.name , []) # invalidate the parent table cache for new relationships.. (old relationships would already be tracked)
+                db.session.add(relationship)
+                # parent_table = tbl_p.foreign_key_reference_table.table_reference
+                # invalidate_user_cache_api(None, parent_table.api_id, parent_table.name , []) # invalidate the parent table cache for new relationships.. (old relationships would already be tracked)
             relationship.entrylists.append(e_list)
-            db.session.add(relationship)
+            return relationship
         except:
             raise Exception({"error": "Could not reference the foreign key id"})
 
 
 
-def validate_create_update_entry_items(entry, parameters, e_list, table, primary_key_fields, update=False):
+def validate_create_update_entry_items(entry, parameters, e_list, table, primary_key_fields, tracked_pks=set(), tracked_unique_values={}, update=False):
     primary_keys = []
+    tracked_changes = []
+    pending_unique_changes = {}
+    validated_entry_state = {}
     for entry_name, entry_value in entry.items():
         if entry_name not in parameters:
             if update:
                 continue
             raise Exception({"error": f"such field name '{entry_name}' doesn't exist"})
         tbl_p = parameters[entry_name]
-        stat, const_type, err_msg, default_return_value = validate_entry_constraints(entry_value, tbl_p) # Validating the entry against the existing constraint
+        if type(entry_value) == str:
+            entry_value = entry_value.strip()
+        stat, const_type, err_msg, default_return_value = validate_entry_constraints(entry_value, tbl_p, tracked_pks, tracked_unique_values) # Validating the entry against the existing constraint
         if const_type == "default" and stat:
             entry_value = default_return_value # set default value
         elif const_type == "nullable" and stat:
@@ -68,10 +64,13 @@ def validate_create_update_entry_items(entry, parameters, e_list, table, primary
         if const_type == "fk" or const_type == "default_fk":
             if const_type == "default_fk":
                 entry_value = default_return_value
-            validate_create_fk_relationships(tbl_p, entry_value, e_list, stat, err_msg)
+            rel = validate_create_fk_relationships(tbl_p, entry_value, e_list, stat, err_msg)
+            tracked_changes.append(rel)
         else:
             if not stat and const_type == "uniq":
                 raise Exception({"error": err_msg})
+            if stat and const_type == "uniq":
+                pending_unique_changes[tbl_p.id] = entry_value
 
             if entry_value and not validate_entry_value(entry_value, tbl_p.data_type.name):
                 raise Exception({"error": "Wrong data type passed."})
@@ -88,15 +87,22 @@ def validate_create_update_entry_items(entry, parameters, e_list, table, primary
             entry_value = datetime_repr(entry_value, tbl_p.data_type.name) if entry_value is not None else entry_value
         e = None
         if update:
-            e = Entry.query.filter_by(tableparameter_id=tbl_p.id, entry_list_id=e_list.id).first() # Grab the entry to be updated
+            
+            e = db.session.scalar(
+                    db.select(Entry).filter_by(tableparameter_id=tbl_p.id, entry_list_id=e_list.id)
+                ) # Grab the entry to be updated
             if e:
-                e.value = entry_value 
-                db.session.add(e)
+                e.value = entry_value
+            tracked_changes.append(e)
+
 
         if not e:
             e = Entry(value=entry_value, tableparameter_id=tbl_p.id)
             e_list.entries.append(e)
+        
         parameters.pop(entry_name) # remove already processed entry_name
+
+        validated_entry_state[entry_name] = entry_value
         
     if not primary_keys and not update:
         raise Exception({"error": "No primary key value"})
@@ -110,65 +116,46 @@ def validate_create_update_entry_items(entry, parameters, e_list, table, primary
             raise Exception({"error": "Primary key field provided doesn't match with your table primary keys"})
         primary_key_value = "".join([ str(key["value"]) for key in primary_keys_sorted])
         # check if primary key already exists
-        if EntryList.query.filter_by(table_id=table.id, primary_key_value=primary_key_value).first():
+        
+        if primary_key_value in tracked_pks or db.session.scalar(
+                db.select(EntryList).filter_by(table_id=table.id, primary_key_value=primary_key_value)
+            ):
             raise Exception({"error": "Primary key already exist"})
         
         # Check if this primary key is already associated with a relationship
-        relationships = Relationship.query.filter_by(entry_ref_pk=e_list.primary_key_value, foreign_key_rel_id=table.reference.id)
-        for relationship in relationships:
+       
+        if update:
+            relationships = db.session.scalar(
+                db.select(Relationship).filter_by(entry_ref_pk=e_list.primary_key_value, foreign_key_rel_id=table.reference.id).options(
+                    selectinload(Relationship.entrylists
+                ))
+            )
+            for relationship in relationships:
+                if relationship:
+                    # incase of update entries with active references can't be updated..
+                    # can be updated without active references
+                    if len(relationship.entrylists):
+                        raise Exception({"error": "Primary key value is being used by other child table"})
 
-            rels = []
-            if relationship:
-                if len(relationship.entrylists):
-                    raise Exception({"error": "Primary key value is being used by other child table", "relationships": rels})
-                else:
-                    invalidate_user_cache_api(None, relationship.child_table.api.id, relationship.child_table.name, []) # invalidate any cache associated with the child table
-                    relationship.entrylists.clear()
-                    db.session.delete(relationship)
-                    rels.append(relationship)
+                    # invalidate_user_cache_api(None, relationship.child_table.api.id, relationship.child_table.name, []) # invalidate any cache associated with the child table
+                    # db.session.delete(relationship)
                 
         e_list.primary_key_value = primary_key_value
+        return tracked_changes, pending_unique_changes, validated_entry_state
 
 
 
 
 
+def create_entry(table, entry, tracked_pks, 
+                 tracked_unique_values, 
+                 cached_required_parameters, 
+                 cached_parameters, 
+                 cached_primary_key_fields,
+                 cached_default_pk_fields
+                 ):
 
-def create_entry(table, entry):
-    
-    try:
-        if type(entry) != dict:
-            raise Exception({"error": "Entry must be a dictionary"})
-        
-  
-        required_parameters = []
-        parameters = {}
-        primary_key_fields = set() # needed to ensure users don't create entries without all the primary key fields present
-        for table_parameter in table.table_parameters:
-            parameters[table_parameter.name] = table_parameter
-            required = True
-            for c in table_parameter.constraints:
-                if c.name.value == "nullable" or c.name.value == "default":
-                    required = False
-                if c.name.value == "primary_key":
-                    primary_key_fields.add(table_parameter.id)
-                    for _c in table_parameter.constraints:
-                        # check if default constraint is present along side primary key so it can autogenerate a value.
-                        # this step is necessary because the primary key field is a required parameter regardless of whether default constraint or not.
-                        if _c.name.value == "default":
-                            if table_parameter.name not in entry:
-                                entry[table_parameter.name] = None
-                            required = True
-                            break
-            if required:   
-                required_parameters.append(table_parameter)
-        if len(entry) < len(required_parameters) or len(entry) > len(parameters):
-            # this doesn't effectively validate against absence of non-nullable fields...
-            raise Exception({"error": "Incomplete field or a non declared field has been passed"})
-        e_list = EntryList(table_id = table.id)
-        db.session.add(e_list)
-
-        """
+    """
         entry format
         
         {
@@ -178,21 +165,84 @@ def create_entry(table, entry):
             ...
         }
         
-        """
-        validate_create_update_entry_items(entry, parameters, e_list, table, primary_key_fields)
+    """
 
+    def load_field_tracker():
+        for table_parameter in table.table_parameters:
+            parameters[table_parameter.name] = table_parameter
+            cached_parameters[table_parameter.name] = table_parameter
+            required = True
+            for c in table_parameter.constraints:
+                if c.name.value == "nullable" or c.name.value == "default":
+                    required = False
+                if c.name.value == "primary_key":
+                    primary_key_fields.add(table_parameter.id)
+                    cached_primary_key_fields.add(table_parameter.id)
+                    for _c in table_parameter.constraints:
+                        # check if default constraint is present along side primary key so it can autogenerate a value.
+                        # this step is necessary because the primary key field is a required parameter regardless of whether default constraint or not.
+                        if _c.name.value == "default":
+                            if table_parameter.name not in entry:
+                                entry[table_parameter.name] = None
+                                cached_default_pk_fields[table_parameter.name] = None
+                            required = True
+                            break
+            if required:   
+                required_parameters.append(table_parameter)
+                cached_required_parameters.append(table_parameter)
+    
+    try:
+        
+        tracked_changes = []
+        if type(entry) != dict:
+            raise Exception({"error": "Entry must be a dictionary"})
+        
+
+        if any([cached_required_parameters, cached_parameters, cached_primary_key_fields]):
+            required_parameters = cached_required_parameters.copy()
+            parameters = cached_parameters.copy()
+            primary_key_fields = cached_primary_key_fields.copy()
+            
+            # Primary key with default constraints might not be passed, to avoid validation error fill the entry with none
+            for k, v in cached_default_pk_fields.items():
+                if k not in entry:
+                    entry[k] = v
+
+        else:
+            required_parameters = []
+            parameters = {}
+            primary_key_fields = set() # needed to ensure users don't create entries without all the primary key fields present
+
+            load_field_tracker()
+
+
+
+        if len(entry) < len(required_parameters) or len(entry) > len(parameters):
+            # this doesn't effectively validate against absence of non-nullable fields...
+            raise Exception({"error": "Incomplete field or a non declared field has been passed"})
+        e_list = EntryList(table_id = table.id)
+
+
+        
+        t_changes, pending_unique_changes, v_entry_state = validate_create_update_entry_items(entry, parameters, e_list, table, primary_key_fields, tracked_pks, tracked_unique_values)
+        tracked_changes.extend(t_changes)
         # after all the required parameters have been sorted
         # iterate over the remaining parameters and create an entry for them with null values and also ensure they do have nullable constraints on their respective fields (thus validating that non-nullable fields are indeed passed)
         for tb_param_name, tb_param  in parameters.items():
             tbl_constraints = [c.name.value for c in tb_param.constraints]
             if "nullable" in tbl_constraints or "default" in tbl_constraints:
-                stat, const_type, err_msg, default_return_value = validate_entry_constraints(None, tb_param)
+                stat, const_type, err_msg, default_return_value = validate_entry_constraints(None, tb_param, tracked_pks, tracked_unique_values)
                 if "default" in tbl_constraints:
                     if const_type == "default_fk":
-                        validate_create_fk_relationships(tb_param, default_return_value, e_list, stat, err_msg)
+                        rel = validate_create_fk_relationships(tb_param, default_return_value, e_list, stat, err_msg)
+                        tracked_changes.append(rel)
                     e = Entry(tableparameter_id=tb_param.id, value=default_return_value)
+                    e_value = default_return_value
                 else:
                     e = Entry(tableparameter_id=tb_param.id)
+                    e_value = None
+
+                v_entry_state[tb_param_name] = e_value
                 e_list.entries.append(e)
             else:
                 raise Exception({"error": f"{tb_param_name} is a non-nullable field (can't be empty)"})
@@ -200,26 +250,26 @@ def create_entry(table, entry):
         
 
     except Exception as e:
-        # print(e)
+        print(e)
+        
+        for change in tracked_changes:
+            db.session.expunge(change)
         error = e.args[0]
-        db.session.rollback()
+
         if type(error) == dict:
-            if "relationships" in error:
-                if error["relationships"]:
-                    # clean the relationships for foreign keys
-                    for stale_relationship in error["relationships"]:
-                        stale_relationship.entrylists.clear()
-                        db.session.delete(stale_relationship)
-                    db.session.commit()
-                error.pop("relationships")
-                
             if "error" in error:
                 return error 
         return {"error": "Something went wrong"}
     
     else:
-        db.session.commit()
-        return {entry.tableparameter.name: parse_value(entry.tableparameter, entry.value) for entry in e_list.entries} 
+
+        db.session.add(e_list)
+        db.session.add_all(tracked_changes)
+
+        for k, v in pending_unique_changes.items():
+            tracked_unique_values[k] = tracked_unique_values.get(k, []) + [v]
+        tracked_pks.add(e_list.primary_key_value)
+        return {tb_param_name: parse_value(cached_parameters[tb_param_name], value) for tb_param_name, value in v_entry_state.items()} 
 
 
 
@@ -237,7 +287,19 @@ def update_entry(entry, table, e_list):
                 if c.name.value == "primary_key":
                     primary_key_fields.add(table_parameter.id)
         
-        validate_create_update_entry_items(entry, parameters, e_list, table, primary_key_fields, True)      
+        validate_create_update_entry_items(entry, parameters, e_list, table, primary_key_fields, update=True)      
+
+        # extra iteration to check for date or datetime fields for update:
+        for tbl_p in table.table_parameters:
+            if tbl_p.data_type.name in ['date', 'datetime']:
+                if not tbl_p.default_value: # only update if the default value is empty.
+                    now = datetime_repr(str(datetime.datetime.now()), tbl_p.data_type.name)
+                    for e in e_list.entries:
+                        if e.tableparameter_id == tbl_p.id:
+                            e.value = now
+                            break
+                
+
 
     except Exception as e:
         print(e)
@@ -265,7 +327,7 @@ def update_entry(entry, table, e_list):
 
 
 
-def return_entry_data(page, size, offset, runningSize, runningOffset, data, list_cache_key, unfiltered = False):
+def return_entry_data(page, size, offset, runningSize, runningOffset, data, unfiltered = False):
     if page:
         has_next = runningSize < 0
         has_prev = page > 1
@@ -274,11 +336,11 @@ def return_entry_data(page, size, offset, runningSize, runningOffset, data, list
         total_data = len(data)
         return {"data": data, "page": page, "has_next": has_next, "has_prev": has_prev, "next_page_num": next_num, "prev_page_num": prev_num, "total_entries": total_data}
     if not page and unfiltered:
-        set_raw_cache(list_cache_key, {"data": data})
+        # set_raw_cache(list_cache_key, {"data": data})
         pass
     return {"data": data}
 
-def list_entries(args, table, list_cache_key):
+def list_entries(args, table):
     unfiltered = False
     page = None
     size = 10
@@ -303,6 +365,7 @@ def list_entries(args, table, list_cache_key):
             runningOffset = offset
             runningSize = size
             found_valid_arg = False # if params passed in are valid or not
+            # if runningOffset >  0:
             get_entryLists = table.entry_lists
             for entry_list in get_entryLists:
                 entry_data = {}
@@ -317,6 +380,7 @@ def list_entries(args, table, list_cache_key):
                         
                     entry_data[tp_name] = e_value
                 if filter_in:
+                    # We need to filter each entry before paginating.. 
                     if page and runningOffset > 0:
                         runningOffset -= 1
                         continue
@@ -337,33 +401,34 @@ def list_entries(args, table, list_cache_key):
 
         # This needs to be revalidated
         # print('got here')
-        entrylists = get_raw_cache(list_cache_key)
+        # entrylists = get_raw_cache(list_cache_key)
         # print(entrylists)
-        if entrylists:
-            return entrylists
+        # if entrylists:
+        #     return entrylists
            
         # if not page:
+ 
+        if page:
+            entrylist_count = len(table.entry_lists)
+            entrylist_list = table.entry_lists[offset:(offset + size)]
+            if offset < entrylist_count:
+                runningOffset = 0
+            if (size + offset) < entrylist_count:
+                runningSize = -1      
+        else:
+            entrylist_list = table.entry_lists
 
-        print('got here')
-        for entry_list in table.entry_lists:
+        for entry_list in entrylist_list:
             if entry_list.entries:
-                if page and runningOffset > 0:
-                    runningOffset -= 1
-                    continue
-                if page and runningSize == 0:
-                    runningSize -= 1
-                    continue
-                if page and runningSize < 0:
-                    break
                 data.append({entry.tableparameter.name: parse_value(entry.tableparameter, entry.value) for entry in entry_list.entries})
-                if page:
-                    runningSize -= 1
 
     except Exception as e:
         print(e)
         return {"error": "Something went wrong"} 
     else:
-        return return_entry_data(page, size, offset, runningSize, runningOffset, data, list_cache_key, unfiltered)
+        # return return_entry_data(page, size, offset, runningSize, runningOffset, data, list_cache_key, unfiltered)
+        return return_entry_data(page, size, offset, runningSize, runningOffset, data, unfiltered)
+
     
 
 
@@ -379,40 +444,76 @@ def create_null_value_entries(table, table_param):
 
 def create_default_value_entries(table, table_param, default_value, is_fk=False):
     entrylists = table.entry_lists
+
+    if is_fk:
+
+        try:
+            rel_id = table_param.foreign_key_reference_id
+            relationship_stmt = db.select(Relationship)\
+                .filter_by(foreign_key_rel_id = rel_id, entry_ref_pk = default_value, child_table_id=table_param.table_id)\
+                .options(selectinload(Relationship.entrylists))
+            relationship = db.session.scalar(relationship_stmt)
+            if not relationship:
+                relationship = Relationship(entry_ref_pk=default_value, foreign_key_rel_id=rel_id, child_table_id=table_param.table_id)
+                db.session.add(relationship)
+        except:
+            raise Exception({"error": "Could not reference the foreign key id while getting/creating relationship"})
+
     for entrylist in entrylists:
         e = Entry(value = default_value)
         table_param.entries.append(e)
         entrylist.entries.append(e)
         if is_fk:
-            try:
-                rel_id = table_param.foreign_key_reference_table.table_reference.table_id
-                relationship = Relationship.query.filter_by(foreign_key_rel_id = rel_id, entry_ref_pk = default_value, child_table_id=table_param.table_id).first() 
-                if not relationship:
-                    relationship = Relationship(entry_ref_pk=default_value, foreign_key_rel_id=rel_id, child_table_id=table_param.table_id)
-                if entrylist not in relationship.entrylists:
-                    relationship.entrylists.append(entrylist)
-                    db.session.add(relationship)
-            except:
-                raise Exception({"error": "Could not reference the foreign key id while getting/creating relationship"})
+            if entrylist not in relationship.entrylists:
+                relationship.entrylists.append(entrylist)
+                db.session.add(relationship)
 
 
 def update_default_value_entries(table_param, default_value, is_fk=False):
     #update the values that are null.. doesn't change previous values.
     entries = table_param.entries
+
+    if is_fk:
+        try:
+            rel_id = table_param.foreign_key_reference_id
+            relationship_stmt = db.select(Relationship)\
+                .filter_by(foreign_key_rel_id = rel_id, entry_ref_pk = default_value, child_table_id=table_param.table_id)\
+                .options(selectinload(Relationship.entrylists))
+            relationship = db.session.scalar(relationship_stmt)
+            if not relationship:
+                relationship = Relationship(entry_ref_pk=default_value, foreign_key_rel_id=rel_id, child_table_id=table_param.table_id)
+                db.session.add(relationship)
+        except Exception as e:
+            raise Exception({"error": "Could not reference the foreign key id while getting/creating relationship"})
     for entry in entries:
         if not entry.value:
             entry.value = default_value
-            if is_fk:   
-                try:
-                    rel_id = table_param.foreign_key_reference_table.table_reference.table_id
-                    relationship = Relationship.query.filter_by(foreign_key_rel_id = rel_id, entry_ref_pk = default_value, child_table_id=table_param.table_id).first() 
-                    if not relationship:
-                        relationship = Relationship(entry_ref_pk=default_value, foreign_key_rel_id=rel_id, child_table_id=table_param.table_id)
-                    if entrylist not in relationship.entrylists:
-                        relationship.entrylists.append(entrylist)
-                        db.session.add(relationship)
-                except:
-                    raise Exception({"error": "Could not reference the foreign key id while getting/creating relationship"})
+            if is_fk:
+                entrylist = entry.entry_list
+                if entrylist not in relationship.entrylists:
+                    relationship.entrylists.append(entrylist)
+                    db.session.add(relationship)
+
+
+# def update_default_value_entries(table_param, default_value, is_fk=False):
+#     #update the values that are null.. doesn't change previous values.
+#     entries = table_param.entries
+#     for entry in entries:
+#         if not entry.value:
+#             entry.value = default_value
+#             if is_fk:   
+#                 try:
+#                     rel_id = table_param.foreign_key_reference_table.table_reference.table_id
+#                     relationship = Relationship.query.filter_by(foreign_key_rel_id = rel_id, entry_ref_pk = default_value, child_table_id=table_param.table_id).first() 
+#                     if not relationship:
+#                         relationship = Relationship(entry_ref_pk=default_value, foreign_key_rel_id=rel_id, child_table_id=table_param.table_id)
+#                     if entrylist not in relationship.entrylists:
+#                         relationship.entrylists.append(entrylist)
+#                         db.session.add(relationship)
+#                 except:
+#                     raise Exception({"error": "Could not reference the foreign key id while getting/creating relationship"})
+
+
 
 
 

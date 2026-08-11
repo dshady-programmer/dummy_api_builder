@@ -1,11 +1,13 @@
 import bleach
 from ast import literal_eval
+from dateutil.parser import parse
+
 def parse_value(tb_parameter, value):
     datatype = tb_parameter.data_type.name
     # consts = [c.name.value for c in tb_parameter.constraints]
     # if "default" in consts:
     #     value = tb_parameter.default_value
-    print("datatype", datatype, value)
+    # print("datatype", datatype, value)
     try:
 
 
@@ -48,9 +50,16 @@ def csv_file_parser(csv_file, table, remaining_rows, delimiter=",", encoding='ut
             if row_count > MAX_ROWS_FOR_CSV or row_count > remaining_rows:
                 break
             if len(row) > max_column:
-                return None, f"CSV file has more columns than the table '{table.name}' allows"
+                return None, f"CSV row {row_count} has more columns than the table '{table.name}' allows"
             entries.append(row)
             row_count += 1
         return entries, None
     except Exception as e:
         return None, "Failed to parse CSV file"
+
+def datetime_repr(entry_value, type):
+    if type == "datetime":
+        return str(parse(entry_value))
+    elif type == "date":
+        return str(parse(entry_value).date())
+    return entry_value

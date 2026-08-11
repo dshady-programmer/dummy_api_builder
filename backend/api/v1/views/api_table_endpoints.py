@@ -6,7 +6,7 @@ tables/model in an api
 from api.v1.views import app_views
 from flask import request, jsonify
 from api.v1.auth.auth import login_required
-from models import db, Api, Table, TableParameter, EntryList, Relationship
+from models import db, Api, Table, TableParameter, Entry, EntryList, Relationship
 from .utils.validate import validate_name
 from .utils.model_utils import (
     parse_and_create_tableparameters, 
@@ -85,7 +85,9 @@ def update_model(user, api_id, model_id):
                                                 .options(selectinload(Table.table_parameters)\
                                                 .selectinload(TableParameter.constraints),
                                                 selectinload(Table.table_parameters)\
-                                                .joinedload(TableParameter.foreign_key_reference_table)
+                                                .joinedload(TableParameter.foreign_key_reference_table),
+                                                selectinload(Table.table_parameters).selectinload(TableParameter.entries)\
+                                                    .joinedload(Entry.entry_list)
 
                                                 )
     table = db.session.scalar(table_stmt)

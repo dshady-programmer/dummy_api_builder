@@ -15,13 +15,15 @@ from .validate import (
     validate_foreign_key_default_value,
     foreign_key_constraints_validator
 )
+import datetime
+
 
 from .model_entry_utils import (
     create_null_value_entries, 
     create_default_value_entries, 
     update_default_value_entries
 )
-from .parsers import html_clean_value
+from .parsers import html_clean_value, datetime_repr
 
 
 from .cache_utils import delete_cache, api_cache_namespace
@@ -93,7 +95,7 @@ def table_parameter_constraints_checks(
         if "nullable" in constraints:
             constraints.remove("nullable")
         if "primary_key" not in constraints:
-            if not param_default_value:
+            if param_dt not in ["date", "datetime"] and not param_default_value:
                 raise Exception({'error': 'Default constraint requires a default value to be provided'})
            
     
@@ -105,15 +107,32 @@ def table_parameter_constraints_checks(
                 # if there is no foreign key constraint, 
                 # we can just create entries with the default value 
                 # if there is already data in the table
-                if not validate_entry_value(param_default_value, param_dt):
+                is_default_value_valid = validate_entry_value(param_default_value, param_dt)
+
+                if param_dt not in ["date", "datetime"] and not is_default_value_valid:
                     raise Exception({"error": "Wrong data type passed for default value"})
+                elif param_dt in ["date", "datetime"]:
+                    if param_default_value != "created" and not is_default_value_valid:
+                        param_default_value = None
+                    elif is_default_value_valid:
+                        param_default_value = datetime_repr(param_default_value, param_dt)
+                    param_dt_length = None # don't validate length for datetime.
+                    
                 if not validate_entry_value_length(param_default_value, param_dt, param_dt_length):
                     raise Exception({"error": "Default values must obey max length restriction"})
                 if entry_present:
-                    if not update:
-                        create_default_value_entries(table, table_param, param_default_value)
+
+                    if param_dt in ["date", "datetime"]:
+                        if param_default_value == "created" or param_default_value is None:
+                            d_value = datetime_repr(str(datetime.datetime.now()), param_dt)
+                        else:
+                            d_value = param_default_value
                     else:
-                        update_default_value_entries(table_param, param_default_value)
+                        d_value = param_default_value
+                    if not update:
+                        create_default_value_entries(table, table_param, d_value)
+                    else:
+                        update_default_value_entries(table_param, d_value)
                 table_param.default_value = param_default_value
 
 
@@ -250,7 +269,7 @@ def create_table_parameter(param, table, tableparam_names, user, entry_present):
         # In case the param_dt_length passed is not an integer
         param_dt_length = None
 
-    # If everything goes perfectly go ahead and create the model field relating to the user table/model and the api
+    # If everything works perfectly go ahead and create the model field relating to the user table/model and the api
     p = TableParameter(name=param_name, data_type=param_dt, dataType_length=param_dt_length)
     table.table_parameters.append(p)
     # keep track of the param_name to avoid duplication later along the line
@@ -392,7 +411,7 @@ def parse_and_update_tableparameters(table_parameters, table, user, entry_presen
         
         delete_table_parameter(existing_table_parameter_mapper)
     except Exception as e:
-        # print(e)
+        print(e)
         # import traceback
         # traceback.print_exc()
         error = e.args[0]
@@ -542,7 +561,7 @@ def delete_table(table):
 
     all_descendants = db.session.scalars(all_ref_stmt, {"parent_ref_id": table.reference.id}).all()
 
-    print('all descendants', all_descendants)
+    # print('all descendants', all_descendants)
     has_table_parameter_with_pk = any(all_descendants)
 
     if has_table_parameter_with_pk:
@@ -582,7 +601,7 @@ def delete_API(api):
         return False, f"Cannot delete {api.name}: At least one table is referencing a table on this api via a foreign key relationship and having it as a primary key"
 
 
-    db.session.delete(table)
+    db.session.delete(api)
     db.session.commit()
     return True, None 
 

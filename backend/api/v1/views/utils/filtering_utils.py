@@ -1,7 +1,7 @@
 from dateutil.parser import parse 
 from ast import literal_eval
 
-def filter_suffixes(tp_name):
+def generate_suffixes(tp_name):
     VALID_FILTER_SUFFIXES = [
         "__lt",
         "__gt",
@@ -83,8 +83,7 @@ def filter_validation(tp_name, datatype, value, check_value):
     
 
 def query_filter(tp_name, args, datatype, value, found_valid_arg, filter_in):
-    tp_names = filter_suffixes(tp_name)
-
+    tp_names = generate_suffixes(tp_name)
     for name in tp_names:
 
         if name in args:

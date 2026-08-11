@@ -4,13 +4,13 @@ e.g name="peter"
 age=12
 etc..
 """
-from sqlalchemy import select, text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import selectinload, joinedload
 from api.v1.views import app_views
 from flask import request, jsonify, make_response
 from models import (
     Api,
     Table,
+    TableParameter,
     User,
     Entry,
     EntryList,
@@ -38,27 +38,41 @@ from .utils.parsers import parse_value, csv_file_parser
 
 @app_views.route('<api_token>/my_api/<api_name>/model/<model_name>', methods=["GET", "POST"])
 def add_list_entry(api_token, api_name, model_name):
-    user = User.query.filter_by(api_token=api_token).first()
+    user_stmt = db.select(User).filter_by(api_token=api_token)
+    user = db.session.scalar(user_stmt)
     if not user:
         return make_response("invalid token", 401)
 
-    api = Api.query.filter_by(name=api_name, user_id=user.id).first()
+
+    api_stmt = db.select(Api).filter_by(name=api_name, user_id=user.id)
+    api = db.session.scalar(api_stmt)
     if not api:
         return make_response(f"{api_name} does not exists in the users catalog", 400)
-    table = Table.query.filter_by(name=model_name, api_id=api.id).first()
+    table_stmt_post = db.select(Table).filter_by(name=model_name, api_id=api.id)\
+        .options(selectinload(Table.table_parameters).selectinload(TableParameter.constraints),
+                 selectinload(Table.table_parameters).joinedload(TableParameter.foreign_key_reference_table))\
+        .with_for_update()
+
+    table_stmt_get = db.select(Table).filter_by(name=model_name, api_id=api.id)\
+            .options(selectinload(Table.entry_lists).selectinload(EntryList.entries)\
+                     .joinedload(Entry.tableparameter))
+    table_stmt = table_stmt_post if request.method == 'POST' else table_stmt_get
+    table = db.session.scalar(table_stmt)
     if not table:
         return make_response(f"model {model_name} doesn't exist in the api", 400)
-    list_cache_key_format = "{api_token}-{api_name}-{model_name}-entries"
-    list_cache_key = list_cache_key_format.format(api_token=api_token, api_name=api_name, model_name=model_name)
+    # list_cache_key_format = "{api_token}-{api_name}-{model_name}-entries"
+    # list_cache_key = list_cache_key_format.format(api_token=api_token, api_name=api_name, model_name=model_name)
     if request.method == "POST":
         # remaining_rows = retrieve_remaining_rows_limit(user)
-        user_limit = db.session.execute(
-            select(UserLimit).where(
+        
+        user_limit = db.session.scalar(
+            db.select(UserLimit).where(
                 UserLimit.user_id == user.id
             ).with_for_update()
-        ).scalar_one() # select for update (locks row, the usage here is just for checking and not updating)
+        )
         remaining_rows = user_limit.max_rows - user_limit.current_rows
         if remaining_rows <= 0:
+            db.session.rollback() # release the row
             return jsonify({"error": "You have reached your maximum number of rows allowed."}), 403
 
         csv_file = request.files.get("csv_file")
@@ -66,6 +80,7 @@ def add_list_entry(api_token, api_name, model_name):
             delimiter = request.form.get("delimiter") or ","
             entries, error = csv_file_parser(csv_file, table=table, remaining_rows=remaining_rows, delimiter=delimiter)
             if error:
+                db.session.rollback()
                 return jsonify({"error": error}), 400
         else:
             data = request.get_json()
@@ -74,72 +89,71 @@ def add_list_entry(api_token, api_name, model_name):
         if type(entries) not in [list, dict]: 
             return jsonify({"error": "Entries must be an object or a an array of objects"}), 400
         no_of_entries_key = f"{user.id}:{api.id}:{model_name}:num_of_entries"
-        executor_thread = init_executor()
+        # executor_thread = init_executor()
         # print("executor_thread", executor_thread)
-        row = None
-        row_update = lambda: db.session.execute(
-                    text(
-                        """
-                            UPDATE user_limit
-                            SET current_rows = current_rows + 1
-                            WHERE user_id = :user_id
-                            AND current_rows < max_rows
-                            RETURNING current_rows
-                        """
-                    ),
-                    {"user_id": user.id}
-                )
-        
-        if type(entries) == dict:
-            try:
-                row = row_update().fetchone()
-                if not row:
-                    raise IntegrityError
-                response = create_entry(table, entries)
-                
-                if 'error' in response:
-                    return jsonify(response), 400
-                set_cache(no_of_entries_key, row.current_rows)
-                executor_thread.submit(update_entry_list_cache_on_add_new_entries, list_cache_key, [response])
-                return jsonify(response), 200
-            except IntegrityError:
-                db.session.rollback()
-                return jsonify({"error": "You have reached your maximum number of rows allowed."}), 403
 
+        tracked_pks = set()
+        tracked_unique_values = {}
+
+        cached_required_parameters = []
+        cached_parameters = {}
+        cached_primary_key_fields = set()
+        cached_default_pk_fields = {}
+        if type(entries) == dict:
+            response = create_entry(
+                        table, entries, 
+                        tracked_pks, 
+                        tracked_unique_values, 
+                        [], {}, set(), {}
+                    )
+            
+            if 'error' in response:
+                return jsonify(response), 400
+            user_limit.current_rows += 1
+            db.session.commit()
+            # set_cache(no_of_entries_key, row.current_rows)
+            # executor_thread.submit(update_entry_list_cache_on_add_new_entries, list_cache_key, [response])
+            return jsonify(response), 200
         else:
             responses = []
+            errors = []
             if len(entries) > remaining_rows:
                 entries = entries[:remaining_rows]
             for entry in entries:
-                try:
-                    row = row_update().fetchone()
-                    if not row:
-                        raise IntegrityError
-                    response = create_entry(table, entry)
+                response = create_entry(
+                    table, entry, tracked_pks, tracked_unique_values,
+                    cached_required_parameters, cached_parameters,
+                    cached_primary_key_fields, cached_default_pk_fields
+                )
 
-                    if 'error' in response:
-                        num_of_responses = len(responses)
-                        stringified_key_entry = {str(k): v for k, v in entry.items()}
-                        set_cache(no_of_entries_key, row.current_rows)
-                        executor_thread.submit(update_entry_list_cache_on_add_new_entries, list_cache_key, responses)
-                        return jsonify({
-                                "status": "error",
-                                "error": {
-                                    "entry": stringified_key_entry,
-                                    "response": response
-                                },
-                                "successful_entries": responses,
-                                "Number of entries added": num_of_responses
-                            }), 400
+                if 'error' in response:
+                    num_of_responses = len(responses)
+                    stringified_key_entry = {str(k): v for k, v in entry.items()}
+                    error_detail = {
+                                "entry": stringified_key_entry,
+                                "response": response
+                            }
+                    errors.append(error_detail)
+                    # set_cache(no_of_entries_key, row.current_rows)
+                    # executor_thread.submit(update_entry_list_cache_on_add_new_entries, list_cache_key, responses)
+                else:
                     responses.append(response)
-                except IntegrityError:
-                    db.session.rollback()
-                    return jsonify({"error": "You have reached your maximum number of rows allowed."}), 403
+
 
             num_of_responses = len(responses)
-            if row is not None:
-                set_cache(no_of_entries_key, row.current_rows) 
-            executor_thread.submit(update_entry_list_cache_on_add_new_entries, list_cache_key, responses)   
+            num_of_errors = len(errors)
+            # if row is not None:
+            #     set_cache(no_of_entries_key, row.current_rows) 
+            db.session.commit()
+            if num_of_errors:
+                return jsonify({
+                    "status": "error",
+                    "Number of errors": num_of_errors,
+                    "errors": errors,
+                    "successful_entries": responses,
+                    "Number of entries added": num_of_responses
+                }), 400
+            # executor_thread.submit(update_entry_list_cache_on_add_new_entries, list_cache_key, responses)   
             return jsonify({
                 "status": "success",
                 "results": responses,
@@ -149,7 +163,8 @@ def add_list_entry(api_token, api_name, model_name):
                 
     elif request.method == "GET":
         args = dict(request.args)
-        response = list_entries(args, table, list_cache_key)
+        # response = list_entries(args, table, list_cache_key)
+        response = list_entries(args, table)
         if type(response) == dict and "error" in response:
             
             return jsonify(response), 400
@@ -160,24 +175,41 @@ def add_list_entry(api_token, api_name, model_name):
 @app_views.route('<api_token>/my_api/<api_name>/model/<model_name>/<model_id>', methods=["PUT", "GET", "DELETE"])
 def update_delete_retrieve_entry(api_token, api_name, model_name, model_id):
 
-    user = User.query.filter_by(api_token=api_token).first()
+    user_stmt = db.select(User).filter_by(api_token=api_token)
+    user = db.session.scalar(user_stmt)
     if not user:
         return make_response("invalid api id", 401)
     
-    cache_key_format = "{api_token}-{api_name}-{model_name}-{model_id}"
-    cache_key = cache_key_format.format(api_token=api_token, api_name=api_name, model_name=model_name, model_id=model_id)
-    api = Api.query.filter_by(name=api_name, user_id=user.id).first()
+    # cache_key_format = "{api_token}-{api_name}-{model_name}-{model_id}"
+    # cache_key = cache_key_format.format(api_token=api_token, api_name=api_name, model_name=model_name, model_id=model_id)
+    api_stmt = db.select(Api).filter_by(name=api_name, user_id=user.id)
+    api = db.session.scalar(api_stmt)
     if not api:
         return make_response(f"{api_name} does not exists in the users catalog", 400)
-    table = Table.query.filter_by(name=model_name, api_id=api.id).first()
+
+    table_stmt_put = db.select(Table).filter_by(name=model_name, api_id=api.id)\
+        .options(joinedload(Table.reference),
+                selectinload(Table.table_parameters).selectinload(TableParameter.constraints),
+                 selectinload(Table.table_parameters).joinedload(TableParameter.foreign_key_reference_table))\
+        .with_for_update()
+
+    table_stmt_default = db.select(Table).filter_by(name=model_name, api_id=api.id)\
+                        .options(joinedload(Table.reference))
+
+    table_stmt = table_stmt_put if request.method == "PUT" else table_stmt_default
+    table = db.session.scalar(table_stmt)
     if not table:
         return make_response(f"model {model_name} doesn't exist in the api", 400)
 
 
-    e_list = EntryList.query.filter_by(table_id = table.id, primary_key_value = model_id).first()
+    e_list_stmt = db.select(EntryList)\
+        .filter_by(table_id=table.id, primary_key_value = model_id)\
+        .options(selectinload(EntryList.entries))
+    e_list_stmt = e_list_stmt.with_for_update() if request.method == 'PUT' else e_list_stmt
+    e_list = db.session.scalar(e_list_stmt)
     if not e_list:
             return jsonify({"error": "primary key value doesn't match any"}), 400
-    child_tables = []
+    # child_tables = []
     
     
     fk_ref_table = table.reference # to grab reference tables incase of foreign key relationships 
@@ -191,53 +223,58 @@ def update_delete_retrieve_entry(api_token, api_name, model_name, model_id):
         response = update_entry(entries, table, e_list)
         if "error" in response:
             return jsonify(response), 400         
-        rels = Relationship.query.filter_by(entry_ref_pk=e_list.primary_key_value, foreign_key_rel_id=fk_ref_table.id)
-        for r in rels:
-            child_tables.append(r.child_table)   
-        invalidate_user_cache_api(cache_key, api.id, table.name, child_tables)
+        # rels = Relationship.query.filter_by(entry_ref_pk=e_list.primary_key_value, foreign_key_rel_id=fk_ref_table.id)
+        # for r in rels:
+        #     child_tables.append(r.child_table)   
+        # invalidate_user_cache_api(cache_key, api.id, table.name, child_tables)
         return jsonify(response), 200
     
 
 
     if request.method == "DELETE":
         entries = Entry.query.filter_by(entry_list_id=e_list.id).delete()
-        rels = Relationship.query.filter_by(entry_ref_pk=e_list.primary_key_value, foreign_key_rel_id=fk_ref_table.id)
-        for r in rels:
-            child_tables.append(r.child_table)
-            r.entrylists.clear()
-            db.session.delete(r)
+        rels = db.delete(Relationship).where(Relationship.entry_ref_pk == e_list.primary_key_value, 
+                                             Relationship.foreign_key_rel_id == fk_ref_table.id)
+
         e_list.relationships.clear()
         db.session.delete(e_list)
+        db.session.execute(rels)
         db.session.commit()
-        invalidate_user_cache_api(cache_key, api.id, table.name, child_tables)
+        # invalidate_user_cache_api(cache_key, api.id, table.name, child_tables)
         return jsonify({'message': 'Entry succesfully deleted'}), 204 # NO content afterall
 
 
     if request.method == "GET":
-        cached_data = get_cache(cache_key)
-        if cached_data is not None:
-            # print(cached_data)
-            return jsonify(cached_data)
+        # cached_data = get_cache(cache_key)
+        # if cached_data is not None:
+        #     # print(cached_data)
+        #     return jsonify(cached_data)
         data = {}
         for data_entry in e_list.entries:
             fieldName = data_entry.tableparameter.name
             data[fieldName] = parse_value(data_entry.tableparameter, data_entry.value)
         # rel_key = db.session(Relationship).filter(Relationship.fk_rel.like(f"{tableKeyName}%"), Relationship.entry_ref_pk=e_list.primary_key_value).first()
-        rels = Relationship.query.filter_by(entry_ref_pk=e_list.primary_key_value, foreign_key_rel_id=fk_ref_table.id)
+        
+        rel_stmt = db.select(Relationship).filter_by(
+            entry_ref_pk=e_list.primary_key_value, 
+            foreign_key_rel_id=fk_ref_table.id)\
+            .options(
+                selectinload(Relationship.entrylists).selectinload(EntryList.entries).joinedload(Entry.tableparameter), 
+                joinedload(Relationship.child_table).joinedload(Table.api)
+            )
+        rels = db.session.scalars(rel_stmt).all()
         rel_key_data = {} # format {"posts":[..]}
     
 
         
         for rel in rels:
-            child_tables.append(rel.child_table)
+            # child_tables.append(rel.child_table)
             fk_rel_name = f"{rel.child_table.api.name.lower()}_{rel.child_table.name.lower()}s"
             rel_key_data[fk_rel_name] = []
             for e_list_rel in rel.entrylists:
-                rel_data = {}
-                for ent in e_list_rel.entries:
-                    rel_data[ent.tableparameter.name] = parse_value(ent.tableparameter, ent.value)
+                rel_data = {ent.tableparameter.name: parse_value(ent.tableparameter, ent.value) for ent in e_list_rel.entries}
                 rel_key_data[fk_rel_name].append(rel_data) # <api_name>_<model_name>s
         data["relationships"] = rel_key_data
 
-        set_user_api_cache(cache_key, data, api.id, table.name, child_tables)
+        # set_user_api_cache(cache_key, data, api.id, table.name, child_tables)
         return jsonify(data), 200

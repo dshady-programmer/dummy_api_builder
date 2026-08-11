@@ -4,6 +4,7 @@ Defining the model for a user created api
 
 from . import db
 
+# composite index of api_name and user_id
 
 class Api(db.Model):
 

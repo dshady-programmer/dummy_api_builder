@@ -4,6 +4,8 @@ e.g name: 'peter' type: 'string' nullable: false
 etc. The model would be similar to the table parameter
 """
 from . import db
+        # tableparameter_id and value for index
+        # tableparameter_id and entry_list_id
 
 
 class Entry(db.Model):

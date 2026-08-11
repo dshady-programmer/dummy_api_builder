@@ -16,6 +16,7 @@ entrylist_relationships = db.Table('entrylist_relationships',
 Relationship allows reverse foreign key relationships...
 """
 
+# entry_ref_pk= foreign_key_rel_id=  indexes
 class Relationship(db.Model):
     """
         Relationship model to define foreign key relationships between tables

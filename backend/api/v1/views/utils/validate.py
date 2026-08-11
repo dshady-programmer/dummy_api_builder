@@ -15,11 +15,11 @@ from sqlalchemy.orm import selectinload
 import keyword
 import uuid
 import secrets
+from .parsers import datetime_repr
 
 
 
-
-def autogenerate_keys(tb_param):
+def autogenerate_keys(tb_param, tracked_pks):
     datatype = tb_param.data_type.name 
     value = None
 
@@ -32,6 +32,8 @@ def autogenerate_keys(tb_param):
             value = secrets.randbelow(2000001)
             if value < lowest_value:
                 continue
+        if value in tracked_pks:
+            break
         e = Entry.query.filter_by(tableparameter_id=tb_param.id, value=value).first()
         if not e:
             break
@@ -125,30 +127,37 @@ def validate_entry_value_length(value, type, length):
     return True
 
 
-def validate_entry_constraints(value, tbl_p):
+def validate_entry_constraints(value, tbl_p, tracked_pks, tracked_unique_values):
     fk = None
     default_value = None
     consts = [const.name.value for const in tbl_p.constraints]
+    condition = (type(value) == str and not value) or (type(value) != bool and not value)
     for c in ["default", "nullable"]:
         if c in consts:
-            condition = (type(value) == str and not value) or (type(value) != bool and not value)
             if condition and c == "default":
 
                 if tbl_p.primary_key:
                     # auto generate keys for primary keys
-                    default_value = autogenerate_keys(tbl_p)
+                    default_value = autogenerate_keys(tbl_p, tracked_pks)
                     return True, c, None, default_value
                 elif "foreign_key" in consts:
                     value = tbl_p.default_value # we need to ensure the default value exist.
                     fk = "default_fk"
                     default_value = str(value)
                     break
+                elif tbl_p.data_type.name in ['date', 'datetime']:
+
+                    if tbl_p.default_value == "created" or not tbl_p.default_value:
+                        default_value = datetime_repr(str(datetime.datetime.now()), tbl_p.data_type.name)
+                    else:
+                        default_value = str(tbl_p.default_value)
+
                 else:
                     default_value = str(tbl_p.default_value)
             if condition:
                 return True, c, None, default_value
         
-    if (type(value) == str and not value) or (type(value) != bool and not value):
+    if condition:
         return False, "non-nullable", "Value can't be empty", default_value
 
     value = str(value)
@@ -160,11 +169,15 @@ def validate_entry_constraints(value, tbl_p):
       
         if not get_ref_table:
             return False, fk, "Reference table doesn't exist", default_value
-        e_li = EntryList.query.filter_by(table_id=get_ref_table.table_id, primary_key_value = value).first()
+        
+        e_li = db.session.scalar(
+                db.select(EntryList).filter_by(table_id=get_ref_table.table_id, primary_key_value = value)
+            )
         if not e_li:
             return False, fk, f"Primary key '{value}' referenced for the foreign key doesn't exist on the parent table", default_value
     if "unique" in consts:
-        if Entry.query.filter_by(tableparameter_id=tbl_p.id, value=value).first():
+        tracked_uniq = tracked_unique_values[tbl_p.id] if tbl_p.id in tracked_unique_values else []
+        if value in tracked_uniq or db.session.scalar(db.select(Entry).filter_by(tableparameter_id=tbl_p.id, value=value)):
             return False, "uniq", f"{value} already exists in the database. It must be unique", default_value
     return True, fk, None, default_value
 

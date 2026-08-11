@@ -7,6 +7,9 @@ from sqlalchemy import CheckConstraint
 MAX_ROWS_FOR_CSV = 100
 MAX_ROW_FOR_USER = 2000
 
+
+# api token (index)
+
 class User(db.Model):
 
     """

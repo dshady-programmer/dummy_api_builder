@@ -7,6 +7,7 @@ age: 15
 e.t.c..
 """
 from . import db
+        # table_id and primary_key_value as index
 
 
 class EntryList(db.Model):
@@ -40,4 +41,5 @@ class EntryList(db.Model):
     entries = db.relationship('Entry', back_populates='entry_list', cascade="all, delete-orphan", passive_deletes=True)
     table_id = db.Column(db.Integer, db.ForeignKey('table.id', ondelete='CASCADE')) 
     table = db.relationship('Table', back_populates='entry_lists')
+
     
