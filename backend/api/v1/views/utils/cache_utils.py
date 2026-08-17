@@ -328,3 +328,122 @@ def update_entry_list_cache_on_add_new_entries(entrylists_key, new_entries):
 
 def set_entry_details(key, api_id, model_id):
     pass
+
+
+
+
+# API CACHES
+
+
+def set_api_list_cache(key, data):
+
+    """
+        set api list cache
+        key: {user:4}:api_list
+
+        data: [{"id": ..}, {"id": ...}]
+
+        only invalidate when:
+            - a new api is created
+            - api info is updated
+            - api is deleted
+    """
+    set_cache(key, data)
+
+
+def set_api_detail_cache(key, data):
+    """
+        set api detail cache
+        key: {user:4}:api:2
+
+        data: {"id":..., "name"..., "tables":...}
+
+        only invalidate when:
+           - the specific api with the id is deleted
+           - there's a change to any of the table name, or description on that api
+           - there's a table deleted on the api
+    """
+
+    set_cache(key, data)
+
+
+def append_to_api_table_keys(key, table_key):
+    """
+        key: {user:4}:api:2:tables
+        table_key: "{user:4}:api:2:table:4"
+
+        Append to cache array that keeps track of the table detail keys stored in the cache
+
+        Use case:
+            when a user creates a new table append the table cache key to this array
+
+        Why?:
+            - When a user deletes an api, all the cache table keys under the api should be invalidated
+            - Deleting an api deletes all the tables in the api, we don't want to have old tables lingering around
+            - Since we check cache before hitting the api endpoint, a stale / deleted information might be served
+
+        invalidate when?
+            An api is deleted
+
+        Limitation
+            - no timeout is added (it doesn't expire)
+            - it persists throughout the lifecycle of the app unless invalidated
+            - In the case of cache crash and there's no back up already existing relationship would not be updated
+                when cache storage restarts. (Only if there is a cache data loss which back up should mitigate)
+    """
+    pass
+
+
+def append_to_api_child_table_keys(key, table_key):
+    """
+        key: {user:4}:api:2:child_tables
+        table_key: "{user:4}:api:3:table:2"
+
+        Append to cache array that keeps track of child_tables key
+
+        Use case:
+            When a user creates a foreign key table `Table B` that references `Api1.TableA`
+                `Api1` keeps track of `Table B` keys.
+
+        Why?
+            - When a user deletes `Api1` all the cached child_tables should be deleted since
+                depending on the foreign key on_delete rule the child table might be deleted too.
+                or only the child_table parameter referencing the api table is deleted
+            - Since tables can reference other tables from other apis, it's best to keep track of the cache keys
+                for invalidation
+        
+        invalidate when?
+            - An api is successfully deleted.
+            - Api information is updated 
+                api name changes it affects the foreign_key_reference information on the child table
+        
+        Limitation
+            - no timeout is added (it doesn't expire)
+            - it persists throughout the lifecycle of the app unless invalidated
+            - In the case of cache crash and there's no back up already existing relationship would not be updated
+                when cache storage restarts. (Only if there is a cache data loss which back up should mitigate)
+
+    """
+    pass 
+
+
+def append_to_api_fk_entrylist_detail_keys(key, entrylist_key):
+    """
+        key: {user:4}:api:2:fk_entrylist_details
+        entrylist_key: {user:4}:api:2:table:2:entrylist:4
+
+        Append to cache array that keeps track of any foreign key entrylist_details key
+
+        Use case:
+            When a user creates an entry on table `A` that references table `B` pk
+                table `A` api should keep track of the entrylist_key of table `B` that's it's referencing
+                
+                table `B` Api should also keep track of table `A` entrylist key
+        
+        Why?
+            To avoid stale data when either a parent table or child table API is deleted
+
+        invalidate when?
+            - An api is successfully deleted
+    """
+    pass

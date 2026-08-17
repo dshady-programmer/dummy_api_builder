@@ -5,8 +5,10 @@ from .filtering_utils import query_filter
 from .parsers import parse_value, html_clean_value
 from .cache_utils import invalidate_user_cache_api, get_cache, set_cache, set_raw_cache, get_raw_cache
 from sqlalchemy.orm import selectinload
-from .parsers import datetime_repr
+from .parsers import datetime_repr, datetime_parse
+from .filtering_utils import generate_suffixes
 import datetime
+
 
 
 def validate_create_fk_relationships(tbl_p, entry_value, e_list, stat, err_msg):
@@ -327,7 +329,7 @@ def update_entry(entry, table, e_list):
 
 
 
-def return_entry_data(page, size, offset, runningSize, runningOffset, data, unfiltered = False):
+def return_entry_data(page, size, offset, runningSize, runningOffset, data):
     if page:
         has_next = runningSize < 0
         has_prev = page > 1
@@ -335,101 +337,191 @@ def return_entry_data(page, size, offset, runningSize, runningOffset, data, unfi
         prev_num = (offset - runningOffset) / size if has_prev else None
         total_data = len(data)
         return {"data": data, "page": page, "has_next": has_next, "has_prev": has_prev, "next_page_num": next_num, "prev_page_num": prev_num, "total_entries": total_data}
-    if not page and unfiltered:
-        # set_raw_cache(list_cache_key, {"data": data})
-        pass
+
     return {"data": data}
+
+
+
+def build_entry_array(entrylists):
+    """
+        Load entrylist from database
+            and
+        Build an array of entrylists
+    
+    """
+    data = []
+    data_type_map = {}
+    for entrylist in entrylists:
+        entry_data = {}
+        entries = entrylist.entries
+        for entry in entries:
+            tp_name = entry.tableparameter.name
+            e_value = parse_value(entry.tableparameter, entry.value)
+            entry_data[tp_name] = e_value
+            if tp_name not in data_type_map:
+                data_type_map[tp_name] = entry.tableparameter.data_type.name
+        data.append(entry_data)
+
+    return data, data_type_map
+
+
+def build_entry_filter(entrylist_array, data_type_map, args, filter_type="&"):
+    """
+        Filter the entrylist array based on any arg param passed
+
+        filter_type default is "&"
+    """
+    if not args:
+        return entrylist_array
+    
+    if len(entrylist_array) == 0:
+        return entrylist_array
+    tp_names = list(data_type_map.keys())
+    valid_args = []
+
+    found_tp_names = set()
+
+    for tp_name in tp_names:
+        for tp_suffix in generate_suffixes(tp_name):
+            if tp_name not in found_tp_names and tp_suffix in args:
+                found_tp_names.add(tp_name) # filter out multiple suffixes for the same table parameter name
+                arg = {}
+                arg['tp_name'] = tp_name
+                arg["tp_suffix"] = tp_suffix
+                valid_args.append(arg)
+                
+    filtered_array = []
+    for entrylist in entrylist_array:
+        filtered_in = query_filter(entrylist, valid_args, args, data_type_map, filter_type)
+        if filtered_in:
+            filtered_array.append(entrylist)
+    
+    return filtered_array
+
+def build_entry_ordering(entrylist_array, data_type_map, order_by):
+    """
+        Sort or order entry list array by keys
+    """
+    if not order_by:
+        return entrylist_array
+
+    valid_ordering = []
+
+    tp_names = set(data_type_map.keys())
+    order_by = order_by[:len(tp_names)]
+
+    for order in order_by:
+        tp_order = order
+        if order.startswith('-'):
+            tp_order = order[1:]
+        if tp_order in order_by:
+            valid_ordering.append(order)
+
+    end = len(valid_ordering) - 1
+
+    sorted_entrylist_array = entrylist_array
+
+    def sort_key(entrylist, sort_by):
+        datatype = data_type_map[sort_by]
+        value = entrylist[sort_by]
+        if datatype == "string" or datatype == "text":
+            return str(value).lower() if value is not None else ""
+        elif datatype == "integer":
+            return int(value) if value is not None else 0
+        elif datatype == "decimal":
+            return float(value) if value is not None else 0.0
+        elif datatype == "boolean":
+            return bool(value) if value is not None else False
+        elif datatype == "date" or datatype == "datetime":
+            return datetime_parse(str(value), datatype) if value is not None else datetime.datetime.min
+        else:
+            return str(value).lower() if value is not None else ""
+
+    while end >= 0:
+        sort_by = valid_ordering[end]
+        reverse = sort_by.startswith('-')
+        if reverse:
+            sort_by = sort_by[1:]
+        sorted_entrylist_array = sorted(sorted_entrylist_array, key=lambda x: sort_key(x, sort_by), reverse=reverse)
+
+        end -= 1
+    return sorted_entrylist_array
+    
+        
+
+
+
+def paginate_entry(entrylist_array, page, size, offset):
+    runningOffset = offset
+    runningSize = size
+    entrylist_paginated = entrylist_array
+    if page:
+        entrylist_count = len(entrylist_array)
+        entrylist_paginated = entrylist_array[offset:(offset + size)]
+        if offset < entrylist_count:
+            runningOffset = 0
+        if (size + offset) < entrylist_count:
+            runningSize = -1  
+    return entrylist_paginated, runningOffset, runningSize
+    
 
 def list_entries(args, table):
     unfiltered = False
     page = None
     size = 10
+
+    filter_type = "&"
+    order_by = []
+
+    # check for pagination
     if "page" in args:
         page = args.pop("page")
         if "size" in args:
             size = args.pop("size")
+
+    # check for filter_type key
+
+    if "filter_type" in args:
+        filter_type = args.pop("filter_type")
+        filter_type = filter_type if filter_type == "|" else "&"
+
+    # check for order_by key
+    if "order_by" in args:
+        # can be comma separated
+        # can contain "-" for reverse chronological order
+
+        order_by = args.pop("order_by")
+        order_by = order_by.split(",")
+
+    offset = 0
+    if page:
+        try:
+            page = int(page)
+            page = page if page > 0 else 1
+            size = int(size)
+            offset = (page - 1) * size
+        except:
+            return {"error": "page and size must be integers"}
     
-    data = []
     try:
-        offset = 0
-        if page:
-            try:
-                page = int(page)
-                page = page if page > 0 else 1
-                size = int(size)
-                offset = (page - 1) * size
-            except:
-                return {"error": "page and size must be integers"}
 
-        if args:
-            runningOffset = offset
-            runningSize = size
-            found_valid_arg = False # if params passed in are valid or not
-            # if runningOffset >  0:
-            get_entryLists = table.entry_lists
-            for entry_list in get_entryLists:
-                entry_data = {}
-                get_entries = entry_list.entries
-                filter_in = True
-                for entry in get_entries:
-                    tp_name = entry.tableparameter.name
-                    e_value = parse_value(entry.tableparameter, entry.value)
+        entrylist_array, data_type_map = build_entry_array(table.entry_lists)
 
-                    if e_value is not None:
-                        found_valid_arg, filter_in = query_filter(tp_name, args, entry.tableparameter.data_type.name, entry.value, found_valid_arg, filter_in)
-                        
-                    entry_data[tp_name] = e_value
-                if filter_in:
-                    # We need to filter each entry before paginating.. 
-                    if page and runningOffset > 0:
-                        runningOffset -= 1
-                        continue
-                    if page and runningSize == 0:
-                        runningSize -= 1
-                        continue
-                    if page and runningSize < 0:
-                        break
-                    data.append(entry_data)
-                    if page:
-                        runningSize -= 1
-            if found_valid_arg:
-                return return_entry_data(page, size, offset, runningSize, runningOffset, data, None)
-        data = []
-        runningOffset = offset
-        runningSize = size
-        unfiltered = True
+        filtered_entrylist = build_entry_filter(entrylist_array, data_type_map, args, filter_type)
 
-        # This needs to be revalidated
-        # print('got here')
-        # entrylists = get_raw_cache(list_cache_key)
-        # print(entrylists)
-        # if entrylists:
-        #     return entrylists
-           
-        # if not page:
- 
-        if page:
-            entrylist_count = len(table.entry_lists)
-            entrylist_list = table.entry_lists[offset:(offset + size)]
-            if offset < entrylist_count:
-                runningOffset = 0
-            if (size + offset) < entrylist_count:
-                runningSize = -1      
-        else:
-            entrylist_list = table.entry_lists
+        sorted_entrylist = build_entry_ordering(filtered_entrylist, data_type_map, order_by)
 
-        for entry_list in entrylist_list:
-            if entry_list.entries:
-                data.append({entry.tableparameter.name: parse_value(entry.tableparameter, entry.value) for entry in entry_list.entries})
+        paginated_entrylist, runningOffset, runningSize = paginate_entry(sorted_entrylist, page, size, offset)
 
     except Exception as e:
         print(e)
         return {"error": "Something went wrong"} 
     else:
         # return return_entry_data(page, size, offset, runningSize, runningOffset, data, list_cache_key, unfiltered)
-        return return_entry_data(page, size, offset, runningSize, runningOffset, data, unfiltered)
+        return return_entry_data(page, size, offset, runningSize, runningOffset, paginated_entrylist)
 
-    
+
+
 
 
 
@@ -521,5 +613,95 @@ def update_default_value_entries(table_param, default_value, is_fk=False):
 
 
 
+
+    
+# def list_entries(args, table):
+#     unfiltered = False
+#     page = None
+#     size = 10
+#     if "page" in args:
+#         page = args.pop("page")
+#         if "size" in args:
+#             size = args.pop("size")
+    
+#     data = []
+#     try:
+#         offset = 0
+#         if page:
+#             try:
+#                 page = int(page)
+#                 page = page if page > 0 else 1
+#                 size = int(size)
+#                 offset = (page - 1) * size
+#             except:
+#                 return {"error": "page and size must be integers"}
+
+#         if args:
+#             runningOffset = offset
+#             runningSize = size
+#             found_valid_arg = False # if params passed in are valid or not
+#             # if runningOffset >  0:
+#             get_entryLists = table.entry_lists
+#             for entry_list in get_entryLists:
+#                 entry_data = {}
+#                 get_entries = entry_list.entries
+#                 filter_in = True
+#                 for entry in get_entries:
+#                     tp_name = entry.tableparameter.name
+#                     e_value = parse_value(entry.tableparameter, entry.value)
+
+#                     if e_value is not None:
+#                         found_valid_arg, filter_in = query_filter(tp_name, args, entry.tableparameter.data_type.name, entry.value, found_valid_arg, filter_in)
+                        
+#                     entry_data[tp_name] = e_value
+#                 if filter_in:
+#                     # We need to filter each entry before paginating.. 
+#                     if page and runningOffset > 0:
+#                         runningOffset -= 1
+#                         continue
+#                     if page and runningSize == 0:
+#                         runningSize -= 1
+#                         continue
+#                     if page and runningSize < 0:
+#                         break
+#                     data.append(entry_data)
+#                     if page:
+#                         runningSize -= 1
+#             if found_valid_arg:
+#                 return return_entry_data(page, size, offset, runningSize, runningOffset, data, None)
+#         data = []
+#         runningOffset = offset
+#         runningSize = size
+#         unfiltered = True
+
+#         # This needs to be revalidated
+#         # print('got here')
+#         # entrylists = get_raw_cache(list_cache_key)
+#         # print(entrylists)
+#         # if entrylists:
+#         #     return entrylists
+           
+#         # if not page:
+ 
+#         if page:
+#             entrylist_count = len(table.entry_lists)
+#             entrylist_list = table.entry_lists[offset:(offset + size)]
+#             if offset < entrylist_count:
+#                 runningOffset = 0
+#             if (size + offset) < entrylist_count:
+#                 runningSize = -1      
+#         else:
+#             entrylist_list = table.entry_lists
+
+#         for entry_list in entrylist_list:
+#             if entry_list.entries:
+#                 data.append({entry.tableparameter.name: parse_value(entry.tableparameter, entry.value) for entry in entry_list.entries})
+
+#     except Exception as e:
+#         print(e)
+#         return {"error": "Something went wrong"} 
+#     else:
+#         # return return_entry_data(page, size, offset, runningSize, runningOffset, data, list_cache_key, unfiltered)
+#         return return_entry_data(page, size, offset, runningSize, runningOffset, data, unfiltered)
 
     

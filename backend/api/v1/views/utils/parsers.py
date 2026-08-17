@@ -16,6 +16,8 @@ def parse_value(tb_parameter, value):
             return value
         if datatype == "integer":
             return int(value)
+        if datatype == "decimal":
+            return float(value)
         elif datatype == "boolean":
             return literal_eval(value)
         return str(value)
@@ -62,4 +64,11 @@ def datetime_repr(entry_value, type):
         return str(parse(entry_value))
     elif type == "date":
         return str(parse(entry_value).date())
+    return entry_value
+
+def datetime_parse(entry_value, type):
+    if type == "datetime":
+        return parse(entry_value)
+    elif type == "date":
+        return parse(entry_value).date()
     return entry_value

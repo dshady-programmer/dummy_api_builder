@@ -30,7 +30,7 @@ def my_api_list(user):
     # s = db.delete(ForeignKeyFieldReferenceTable).where(ForeignKeyFieldReferenceTable.table_id.in_([4]))
     # db.session.execute(s)
     # db.session.commit()
-    print("foreign key scalar", db.session.execute(db.text("PRAGMA foreign_keys")).scalar())
+    # print("foreign key scalar", db.session.execute(db.text("PRAGMA foreign_keys")).scalar())
     key = f"{user_cache_namespace(user.id)}:apis"
     cached_data = get_cache(key)
 
