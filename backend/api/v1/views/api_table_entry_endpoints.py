@@ -18,6 +18,7 @@ from models import (
     UserLimit, db
 )
 from executor import init_executor
+from .utils.resource_delete_utils import delete_entrylists
 from .utils.model_entry_utils import (
     create_entry, 
     list_entries, 
@@ -144,7 +145,11 @@ def add_list_entry(api_token, api_name, model_name):
             num_of_errors = len(errors)
             # if row is not None:
             #     set_cache(no_of_entries_key, row.current_rows) 
-            db.session.commit()
+            try:
+                db.session.commit()
+            except Exception as e:
+                return jsonify({"status": "error", "message": "Database Integrity Error"}), 409
+
             if num_of_errors:
                 return jsonify({
                     "status": "error",
@@ -219,29 +224,28 @@ def update_delete_retrieve_entry(api_token, api_name, model_name, model_id):
         entries = data.get("entries") or {}
         if type(entries) != dict:
             return jsonify({"error": "Entries must be an object"}), 400
+        try:
 
-        response = update_entry(entries, table, e_list)
-        if "error" in response:
-            return jsonify(response), 400         
-        # rels = Relationship.query.filter_by(entry_ref_pk=e_list.primary_key_value, foreign_key_rel_id=fk_ref_table.id)
-        # for r in rels:
-        #     child_tables.append(r.child_table)   
-        # invalidate_user_cache_api(cache_key, api.id, table.name, child_tables)
-        return jsonify(response), 200
-    
+            response = update_entry(entries, table, e_list)
+            if "error" in response:
+                return jsonify(response), 400         
+            # rels = Relationship.query.filter_by(entry_ref_pk=e_list.primary_key_value, foreign_key_rel_id=fk_ref_table.id)
+            # for r in rels:
+            #     child_tables.append(r.child_table)   
+            # invalidate_user_cache_api(cache_key, api.id, table.name, child_tables)
+            return jsonify(response), 200
+        except Exception as e:
+            return jsonify({"status": "error", "message": "Database Integrity Error"}), 409
+
+        
 
 
     if request.method == "DELETE":
-        entries = Entry.query.filter_by(entry_list_id=e_list.id).delete()
-        rels = db.delete(Relationship).where(Relationship.entry_ref_pk == e_list.primary_key_value, 
-                                             Relationship.foreign_key_rel_id == fk_ref_table.id)
-
-        e_list.relationships.clear()
-        db.session.delete(e_list)
-        db.session.execute(rels)
-        db.session.commit()
-        # invalidate_user_cache_api(cache_key, api.id, table.name, child_tables)
-        return jsonify({'message': 'Entry succesfully deleted'}), 204 # NO content afterall
+        status, msg, code = delete_entrylists(db, fk_ref_table.id, [e_list])
+        if status:
+            return jsonify({'message': 'Entry succesfully deleted'}), code # NO content afterall
+        else:
+            return jsonify({"status": "error", "message": msg}), code
 
 
     if request.method == "GET":

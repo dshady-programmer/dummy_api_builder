@@ -10,9 +10,10 @@ from models import db, Api, Table, TableParameter, Entry, EntryList, Relationshi
 from .utils.validate import validate_name
 from .utils.model_utils import (
     parse_and_create_tableparameters, 
-    parse_and_update_tableparameters,
-    delete_table
+    parse_and_update_tableparameters
 )
+from .utils.resource_delete_utils import delete_table, delete_entrylists
+
 from sqlalchemy.orm import selectinload, joinedload
 from .utils.cache_utils import (
     get_cache, set_cache, delete_cache, 
@@ -58,12 +59,16 @@ def create_model(user, api_id):
         return jsonify({"error": "Table name must be a valid python identifier, not a python keyword and must be atleast 3 letters"}), 400
     new_table = Table(name=name, description=description, api_id=api_id)
     db.session.add(new_table)
-    response = parse_and_create_tableparameters(table_parameters, new_table, user)
-    if 'error' in response:
-        return jsonify(response), 400
+    try:
+        response = parse_and_create_tableparameters(table_parameters, new_table, user)
+        if 'error' in response:
+            return jsonify(response), 400
 
 
-    return jsonify(response), 200
+        return jsonify(response), 200
+    except Exception as e:
+        print(e)
+        return jsonify({"status": "error", "message": "Database Integrity Error"}), 409
 
 
 
@@ -89,7 +94,7 @@ def update_model(user, api_id, model_id):
                                                 selectinload(Table.table_parameters).selectinload(TableParameter.entries)\
                                                     .joinedload(Entry.entry_list)
 
-                                                )
+                                                ).with_for_update()
     table = db.session.scalar(table_stmt)
 
     if not table:
@@ -110,19 +115,23 @@ def update_model(user, api_id, model_id):
     if description and table.description != description:
         table.description = description
         should_invalidate_api_detail = True
- 
-    response = parse_and_update_tableparameters(table_parameters, table, user, entry_present)
-    if 'error' in response:
-        return jsonify(response), 400
 
-    table_cache_key = f"{api_cache_namespace(user.id, api_id)}:model:{table.id}"
-    if should_invalidate_api_detail:
-        api_cache_key = f"{api_cache_namespace(user.id, api_id)}:detail"
-        multiple_key_delete([table_cache_key, api_cache_key])
-    else:
-        delete_cache(table_cache_key)
+    try:
+        response = parse_and_update_tableparameters(table_parameters, table, user, entry_present)
+        if 'error' in response:
+            return jsonify(response), 400
 
-    return jsonify(response), 200
+        table_cache_key = f"{api_cache_namespace(user.id, api_id)}:model:{table.id}"
+        if should_invalidate_api_detail:
+            api_cache_key = f"{api_cache_namespace(user.id, api_id)}:detail"
+            multiple_key_delete([table_cache_key, api_cache_key])
+        else:
+            delete_cache(table_cache_key)
+
+        return jsonify(response), 200
+    except Exception as e:
+        print(e)
+        return jsonify({"error": "Database Integrity Error"}), 409
 
 
 
@@ -199,16 +208,16 @@ def delete_model(user, api_id, model_id):
         return jsonify({"error": "Table doesn't exist"}), 400
 
     # delete table but with a check on relationships
-    status, msg = delete_table(t)
+    status, msg, code = delete_table(db, t)
     if not status:
-        return jsonify(msg), 400
+        return jsonify(msg), code
     
     table_cache_key = f"{api_cache_namespace(user.id, api_id)}:model:{t.id}"
     num_entries = f"{api_cache_namespace(user.id, api_id)}:model:{t.id}:num_of_entries"
     api_cache_key = f"{api_cache_namespace(user.id, api_id)}:detail"
     multiple_key_delete([table_cache_key, num_entries, api_cache_key])
    
-    return jsonify(''), 204
+    return jsonify(''), code
 
 
 
@@ -226,17 +235,15 @@ def truncate_model(user, api_id, model_id):
     if not t:
         return jsonify({"error": "Table doesn't exist"}), 400
 
-    entrylist_stmt = db.delete(EntryList).filter_by(table_id=t.id)
+    entrylist_stmt = db.select(EntryList).filter_by(table_id=t.id)
+    entrylists = db.session.scalars(entrylist_stmt).all()
 
-    db.session.execute(entrylist_stmt)
+    status, msg, code = delete_entrylists(db, t.reference.id, entrylists)
 
-    parent_rels = db.delete(Relationship).filter_by(foreign_key_rel_id=t.reference.id)
-
-    db.session.execute(parent_rels)
-
-    num_entries = f"{api_cache_namespace(user.id, api_id)}:model:{model_id}:num_of_entries"
-    set_cache(num_entries, 0)
-    db.session.commit()
-
-    return jsonify(''), 204
+    if status:
+        num_entries = f"{api_cache_namespace(user.id, api_id)}:model:{model_id}:num_of_entries"
+        set_cache(num_entries, 0)
+        return jsonify(''), code
+    else:
+        return jsonify({"status": "error", "message": msg}), code
 

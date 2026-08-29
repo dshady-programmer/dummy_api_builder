@@ -27,7 +27,7 @@ class Table(db.Model):
 
         reference: Relationship to the ForeignKeyFieldReferenceTable model for back reference (table.reference gives the foreign key reference for the table)
     """
-    id = db.Column(db.Integer, primary_key=True)
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     name = db.Column(db.String, nullable=False)
     description = db.Column(db.Text)
     api_id = db.Column(db.Integer, db.ForeignKey('api.id', ondelete='CASCADE'))
@@ -36,3 +36,8 @@ class Table(db.Model):
     reference = db.relationship('ForeignKeyFieldReferenceTable', back_populates='table_reference', cascade='all, delete-orphan', uselist=False, passive_deletes=True)
     entry_lists = db.relationship('EntryList', back_populates='table', cascade="all, delete-orphan", passive_deletes=True)
     reverse_relationships = db.relationship('Relationship', backref='child_table', cascade="all, delete-orphan", passive_deletes=True)
+
+    __table_args__ = (
+        db.UniqueConstraint('api_id', 'name', name='uq_table_api_id_table_name'),
+        {'sqlite_autoincrement': True}  # Ensure that the id is always incremented and not reused after deletion
+    )

@@ -34,7 +34,7 @@ class User(db.Model):
     user_apis = db.relationship('Api', back_populates='user', cascade="all, delete-orphan", passive_deletes=True)
     user_limit_ref = db.relationship('UserLimit', back_populates='user_ref', uselist=False, cascade="all, delete-orphan", passive_deletes=True)
     
-
+    __table_args__ = {'sqlite_autoincrement': True}  # Ensure that the id is always incremented and not reused after deletion
     def __str__(self):
         return f'User(id={self.id}, email={self.email}, public_id={self.public_id})'
 
@@ -51,7 +51,7 @@ class UserLimit(db.Model):
         max_rows: Maximum number of rows the user can create
         check_constraint: Ensure current_rows does not exceed max_rows
     """
-    id = db.Column(db.Integer, primary_key=True)
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='CASCADE'), unique=True, nullable=False)
     user_ref = db.relationship('User', back_populates='user_limit_ref')
     current_rows = db.Column(db.Integer, nullable=False, default=0)
@@ -59,6 +59,7 @@ class UserLimit(db.Model):
 
     __table_args__ = (
         CheckConstraint('current_rows <= max_rows', name='check_current_rows_not_exceed_max_rows'),
+        {'sqlite_autoincrement': True}
     )
 
     def __str__(self):

@@ -8,7 +8,7 @@ from . import db
 entrylist_relationships = db.Table('entrylist_relationships',
                                  db.Column('relationship_id', db.Integer, db.ForeignKey('relationship.id', name='fk_entrylist_relationships_relationship_id', ondelete='CASCADE')),
                                  db.Column('entrylist_id', db.Integer, db.ForeignKey('entrylist.id', name='fk_entrylist_relationships_entrylist_id', ondelete='CASCADE')),
-                                 db.UniqueConstraint('relationship_id', 'entrylist_id', name='uq_relationship_entrylist')
+                                 db.UniqueConstraint('relationship_id', 'entrylist_id', name='uq_relationship_entrylist'),
                                  )
 
 
@@ -46,8 +46,13 @@ class Relationship(db.Model):
         foreign_key_rel_id: Foreign key to the ForeignKeyFieldReferenceTable model (the parent
         child_table_id: Foreign key to the child table (the table that has the foreign key)
     """
-    id = db.Column(db.Integer, primary_key=True)
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     entry_ref_pk = db.Column(db.String, nullable=False) # reference to foreign key primary key
-    entrylists = db.relationship("EntryList", secondary=entrylist_relationships, backref="relationships")
+    entrylists = db.relationship("EntryList", secondary=entrylist_relationships, backref="relationships", passive_deletes=True)
     foreign_key_rel_id = db.Column(db.Integer, db.ForeignKey('foreignkeyfieldreferencetable.id', ondelete='CASCADE'))  # parent table reference for the foreign key relationship
     child_table_id = db.Column(db.Integer, db.ForeignKey('table.id', ondelete='CASCADE')) # child table reference for the foreign key relationship
+
+    __table_args__ = (
+        db.UniqueConstraint('entry_ref_pk', 'foreign_key_rel_id', name='uq_relationship_entry_ref_pk_foreign_key_rel_id'),
+        {'sqlite_autoincrement': True}
+    )

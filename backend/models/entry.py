@@ -31,9 +31,15 @@ class Entry(db.Model):
         
 
     """
-    id = db.Column(db.Integer, primary_key=True)
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     value = db.Column(db.Text, nullable=True)
     tableparameter_id = db.Column(db.Integer, db.ForeignKey('tableparameter.id', ondelete='CASCADE'))
     tableparameter = db.relationship('TableParameter', back_populates='entries')
     entry_list_id = db.Column(db.Integer, db.ForeignKey('entrylist.id', ondelete='CASCADE'))
     entry_list = db.relationship('EntryList', back_populates='entries')
+
+    # fk_entry_list_id = db.Column(db.Integer, db.ForeignKey('entrylist.id', ondelete='SET NULL'), nullable=True)
+    __table_args__ = (
+        # CheckConstraint('entry_list_id != fk_entry_list_id', name='check_fk_entry_list_id_not_same_as_entry_list_id'),
+        {'sqlite_autoincrement': True}  # Ensure that the id is always incremented and not reused after deletion
+    )

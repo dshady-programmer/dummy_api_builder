@@ -33,8 +33,8 @@ const Index = () => {
             alert("Model deleted successfully")
         } else if (res.status === 400) {
             const msg = await res.json()
-
-            alert(msg)
+            if ("error" in msg)
+                alert(msg.error)
             return
         }
 

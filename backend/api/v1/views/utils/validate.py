@@ -280,10 +280,34 @@ def foreign_key_ref_table_validator(table_param, param_dt, param, user):
     table_param.foreign_key_reference_id = foreign_key_ref_table.id
     return r_table
 
+
+def foreign_key_on_delete_validator(table_param, param, constraints):
+
+    # check for primary key
+    table_level_on_delete = param.get("table_on_delete")
+    row_level_on_delete = param.get("row_level_on_delete")
+
+    if table_level_on_delete not in ["protect", "cascade"] or row_level_on_delete not in ["protect", "cascade", "set_null"]:
+        return None # defaults to protect for both row and table level
+
+    if "primary_key" in constraints:
+        table_level_on_delete = 'protect'
+        if row_level_on_delete not in ['protect', 'cascade']:
+            row_level_on_delete = 'protect'
+    else:
+        if row_level_on_delete == 'set_null' and nullable not in 'constraints':
+            row_level_on_delete = 'protect'
+
+
+    table_param.table_level_on_delete = table_level_on_delete
+    table_param.row_level_on_delete = row_level_on_delete
+
+
+
 def validate_foreign_key_default_value(
         parent_table, table, table_param, 
         default_value, entry_present, 
-        run_update, update
+        run_update, update, is_default=False
     ):
     from .model_entry_utils import (
         create_default_value_entries, 
@@ -302,8 +326,8 @@ def validate_foreign_key_default_value(
     """
  
 
-    if not default_value:
-        return 
+    if not is_default:
+        return
 
     e_list = db.session.scalar(db.select(EntryList).filter_by(table_id=parent_table.id, primary_key_value=default_value))
     if not e_list:

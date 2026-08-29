@@ -33,6 +33,24 @@ class DataTypes(enum.Enum):
     date = 'date'
     datetime = 'datetime'
 
+class TableLevelOnDeleteOptions(enum.Enum):
+
+    """
+        Table level foreign key On-Delete options 
+    """
+
+    cascade = 'CASCADE'
+    protect = 'PROTECT'
+
+
+class RowLevelOndeleteOptions(enum.Enum):
+    """
+        Row level foreign key On-Delete options
+    """
+    cascade = 'CASCADE'
+    protect = 'PROTECT'
+    set_null = 'SET_NULL'
+
 
 
 class TableParameter(db.Model):
@@ -70,14 +88,24 @@ class TableParameter(db.Model):
 
     """
     __tablename__ = 'tableparameter'
-    id = db.Column(db.Integer, primary_key=True)
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     name = db.Column(db.String, nullable=False)
     data_type = db.Column(db.Enum(DataTypes), default=DataTypes.string, nullable=False)
     primary_key = db.Column(db.Boolean, default=False) 
     foreign_key_reference_id = db.Column(db.Integer, db.ForeignKey('foreignkeyfieldreferencetable.id', ondelete='CASCADE'), nullable=True) 
     dataType_length = db.Column(db.Integer, nullable=True) # Only valid for strings, text, integers
     default_value = db.Column(db.Text, nullable=True) # for default values
+
+    # foreign_key_default_value = db.Column(db.Integer, db.ForeignKey('entrylist.id', ondelete='SET NULL'), nullable=True) # if field has a foreign key constraint and default value
     table_id = db.Column(db.Integer, db.ForeignKey('table.id', ondelete='CASCADE'))
     table = db.relationship('Table', back_populates='table_parameters')
     constraints = db.relationship('Constraint', secondary=parameter_constraints, backref='table_parameters')
     entries = db.relationship('Entry', back_populates='tableparameter', cascade="all, delete-orphan", passive_deletes=True)
+
+    table_level_on_delete = db.Column(db.Enum(TableLevelOnDeleteOptions), default=TableLevelOnDeleteOptions.protect, nullable=False) # on delete behavior for the table level foreign key relationship. It can be either CASCADE, PROTECT.
+    row_level_on_delete = db.Column(db.Enum(RowLevelOndeleteOptions), default=RowLevelOndeleteOptions.protect, nullable=False) # on delete behavior for the row level foreign key relationship. It can be either CASCADE, PROTECT or SET_NULL.
+
+    __table_args__ = (
+        db.UniqueConstraint('table_id', 'name', name='uq_tableparameter_table_id_name'),
+        {'sqlite_autoincrement': True}  # Ensure that the id is always incremented and not reused after deletion
+    )

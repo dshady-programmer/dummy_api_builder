@@ -36,10 +36,14 @@ class EntryList(db.Model):
         table: Relationship to the Table model for back reference (entry_list.table gives the table the entry list belongs to)
     """
     __tablename__ = 'entrylist'
-    id = db.Column(db.Integer, primary_key=True)
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     primary_key_value = db.Column(db.Text)
     entries = db.relationship('Entry', back_populates='entry_list', cascade="all, delete-orphan", passive_deletes=True)
     table_id = db.Column(db.Integer, db.ForeignKey('table.id', ondelete='CASCADE')) 
     table = db.relationship('Table', back_populates='entry_lists')
 
     
+    __table_args__ = (
+        db.UniqueConstraint('table_id', 'primary_key_value', name='uq_entrylist_table_id_primary_key_value'),
+        {'sqlite_autoincrement': True}  # Ensure that the id is always incremented and not reused after 
+    )

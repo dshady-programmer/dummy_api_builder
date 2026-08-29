@@ -13,7 +13,8 @@ from .validate import (
     validate_entry_value, validate_entry_value_length,
     unique_constraints_validator, foreign_key_ref_table_validator,
     validate_foreign_key_default_value,
-    foreign_key_constraints_validator
+    foreign_key_constraints_validator,
+    foreign_key_on_delete_validator
 )
 import datetime
 
@@ -190,11 +191,12 @@ def check_and_validate_tableparameter(
             raise Exception({"error": "invalid constraint"})
         if const == "foreign_key":
             parent_table = foreign_key_ref_table_validator(table_param, param_dt, param, user)
+            foreign_key_on_delete_validator(table_param, param, constraints) # validate on delete options
             run_update = True
-
+            is_default = "default" in constraints
             if entry_present and update:
                 if prev_constraints and "foreign_key" in prev_constraints:
-                    if "default" in constraints:
+                    if is_default:
                         """
                         Don't bother running default validator check if the new default value is the same as the old
                         Provided the field remains a foreign key from previous update.
@@ -210,7 +212,7 @@ def check_and_validate_tableparameter(
             validate_foreign_key_default_value(
                 parent_table, table, 
                 table_param, param_default_value, 
-                entry_present, run_update, update
+                entry_present, run_update, update, is_default
             )
 
         if const == "primary_key":
@@ -353,6 +355,8 @@ def delete_table_parameter(table_params):
         if fk_ref_table_id:
             Relationship.query.filter_by(foreign_key_rel_id=fk_ref_table_id).delete()
 
+    ## cache update here too
+
 
 
 def parse_and_create_tableparameters(table_parameters, new_table, user):
@@ -391,7 +395,14 @@ def parse_and_update_tableparameters(table_parameters, table, user, entry_presen
     tableparam_names = set()
     existing_table_parameter_mapper = {}
 
+
+
+    existing_primary_keys = set()
+    updated_primary_keys = set()
+
     for existing_tblp in table.table_parameters:
+        if existing_tblp.primary_key:
+            existing_primary_keys.add(existing_tblp)
         tableparam_names.add(existing_tblp.name)
         existing_table_parameter_mapper[existing_tblp.id] = existing_tblp
     
@@ -401,13 +412,20 @@ def parse_and_update_tableparameters(table_parameters, table, user, entry_presen
             param_id = param.get("index")
             if param_id in existing_table_parameter_mapper:
                 is_primary_key = update_table_parameter(param, table, existing_table_parameter_mapper[param_id], tableparam_names, user, entry_present)
+                if is_primary_key:
+                    updated_primary_keys.add(existing_table_parameter_mapper[param_id])
                 existing_table_parameter_mapper.pop(param_id)
             else:
+
                 is_primary_key = create_table_parameter(param, table, tableparam_names, user, entry_present)
+                # if is_primary_key and entry_present are true validation error is raised before getting to this point.
             if not primary_key_present:
                 primary_key_present = is_primary_key
         if not primary_key_present:
             raise Exception({"error": "Table must contain atleast one primary key"})
+
+        if entry_present and existing_primary_keys != updated_primary_keys:
+            raise Exception({"error":  "You can't delete a primary key field from a table with already existing data."})
         
         delete_table_parameter(existing_table_parameter_mapper)
     except Exception as e:
@@ -426,184 +444,184 @@ def parse_and_update_tableparameters(table_parameters, table, user, entry_presen
 
 
 
-def delete_table(table):
-    """
-        When a foreign key field is also set as the primary key field there's need to lock the parent table
-            To prevent deletion of the child field when the parent table is deleted.
+# def delete_table(table):
+#     """
+#         When a foreign key field is also set as the primary key field there's need to lock the parent table
+#             To prevent deletion of the child field when the parent table is deleted.
         
-        The lock acts like a ondelete="PROTECT"
+#         The lock acts like a ondelete="PROTECT"
 
-        This check kicks in when a table is about to be deleted.
+#         This check kicks in when a table is about to be deleted.
 
-        This checks all the direct and indirect descendants of the tables that references it as a primary key.
-    """
+#         This checks all the direct and indirect descendants of the tables that references it as a primary key.
+#     """
 
 
-    dialect = db.engine.dialect.name
+#     dialect = db.engine.dialect.name
 
-    # get all table reference id where the tableparameter foreign key id is the fk_tb_ref_id..
-    # This gets all direct child table reference fk_tb_ref_id
-    # e.g User => Post => Comment
-    # if fk_tb_ref_id = user1.reference.id then base returns Post reference table.. because it's the only table 
-            # that has User has its foreign key
-    # The recursive query, repeats the same check from joining base.. since base returns the Post reference table
-    # the recursive now returns Comment reference table since comment is the only table that has Post has its foreign key
-    # Using common table expression with a recursive call to drill down the chain of parent->child relationship
+#     # get all table reference id where the tableparameter foreign key id is the fk_tb_ref_id..
+#     # This gets all direct child table reference fk_tb_ref_id
+#     # e.g User => Post => Comment
+#     # if fk_tb_ref_id = user1.reference.id then base returns Post reference table.. because it's the only table 
+#             # that has User has its foreign key
+#     # The recursive query, repeats the same check from joining base.. since base returns the Post reference table
+#     # the recursive now returns Comment reference table since comment is the only table that has Post has its foreign key
+#     # Using common table expression with a recursive call to drill down the chain of parent->child relationship
 
-    # finally, lock all table reference rows that are direct or indirect descendants of table.reference.id
+#     # finally, lock all table reference rows that are direct or indirect descendants of table.reference.id
 
-    if dialect == 'postgresql':
+#     if dialect == 'postgresql':
 
-        all_ref_stmt = text(
-            """
-                WITH RECURSIVE all_referencing  AS (
-                    SELECT table_ref.id AS table_ref_id, ARRAY[table_ref.id] AS path
-                        FROM tableparameter tp
-                            JOIN foreignkeyfieldreferencetable table_ref 
-                            ON table_ref.table_id = tp.table_id
-                        WHERE tp.foreign_key_reference_id = :parent_ref_id
+#         all_ref_stmt = text(
+#             """
+#                 WITH RECURSIVE all_referencing  AS (
+#                     SELECT table_ref.id AS table_ref_id, ARRAY[table_ref.id] AS path
+#                         FROM tableparameter tp
+#                             JOIN foreignkeyfieldreferencetable table_ref 
+#                             ON table_ref.table_id = tp.table_id
+#                         WHERE tp.foreign_key_reference_id = :parent_ref_id
                 
-                    UNION ALL
+#                     UNION ALL
 
-                    SELECT table_ref.id, all_ref.path || table_ref.id
-                        FROM tableparameter tp
-                            JOIN foreignkeyfieldreferencetable table_ref
-                                ON table_ref.table_id = tp.table_id
-                            JOIN all_referencing all_ref
-                                ON tp.foreign_key_reference_id = all_ref.table_ref_id
-                        WHERE tp.foreign_key_reference_id != ALL(all_ref.path)
+#                     SELECT table_ref.id, all_ref.path || table_ref.id
+#                         FROM tableparameter tp
+#                             JOIN foreignkeyfieldreferencetable table_ref
+#                                 ON table_ref.table_id = tp.table_id
+#                             JOIN all_referencing all_ref
+#                                 ON tp.foreign_key_reference_id = all_ref.table_ref_id
+#                         WHERE tp.foreign_key_reference_id != ALL(all_ref.path)
             
-                )
+#                 )
                 
-                SELECT tp.primary_key
-                FROM foreignkeyfieldreferencetable fk_ref_table
-                    JOIN all_referencing all_ref ON fk_ref_table.id = all_ref.table_ref_id
-                    JOIN "table" t ON fk_ref_table.table_id = t.id
-                    JOIN tableparameter tp ON tp.table_id = t.id
-                WHERE tp.foreign_key_reference_id IS NOT NULL
-                FOR UPDATE OF fk_ref_table
+#                 SELECT tp.primary_key
+#                 FROM foreignkeyfieldreferencetable fk_ref_table
+#                     JOIN all_referencing all_ref ON fk_ref_table.id = all_ref.table_ref_id
+#                     JOIN "table" t ON fk_ref_table.table_id = t.id
+#                     JOIN tableparameter tp ON tp.table_id = t.id
+#                 WHERE tp.foreign_key_reference_id IS NOT NULL
+#                 FOR UPDATE OF fk_ref_table
 
-            """
-        )
-    elif dialect == 'mysql':
-        all_ref_stmt = text(
-            """
-                WITH RECURSIVE all_referencing  AS (
-                    SELECT table_ref.id AS table_ref_id, CONCAT(',', table_ref.id, ',') AS path
-                        FROM tableparameter tp
-                            JOIN foreignkeyfieldreferencetable table_ref 
-                            ON table_ref.table_id = tp.table_id
-                        WHERE tp.foreign_key_reference_id = :parent_ref_id
+#             """
+#         )
+#     elif dialect == 'mysql':
+#         all_ref_stmt = text(
+#             """
+#                 WITH RECURSIVE all_referencing  AS (
+#                     SELECT table_ref.id AS table_ref_id, CONCAT(',', table_ref.id, ',') AS path
+#                         FROM tableparameter tp
+#                             JOIN foreignkeyfieldreferencetable table_ref 
+#                             ON table_ref.table_id = tp.table_id
+#                         WHERE tp.foreign_key_reference_id = :parent_ref_id
                 
-                    UNION ALL
+#                     UNION ALL
 
-                    SELECT table_ref.id, CONCAT(all_ref.path, table_ref.id, ',')
-                        FROM tableparameter tp
-                            JOIN foreignkeyfieldreferencetable table_ref
-                                ON table_ref.table_id = tp.table_id
-                            JOIN all_referencing all_ref
-                                ON tp.foreign_key_reference_id = all_ref.table_ref_id
-                        WHERE INSTR(all_ref.path, CONCAT(',', table_ref.id, ',')) = 0
-                )
+#                     SELECT table_ref.id, CONCAT(all_ref.path, table_ref.id, ',')
+#                         FROM tableparameter tp
+#                             JOIN foreignkeyfieldreferencetable table_ref
+#                                 ON table_ref.table_id = tp.table_id
+#                             JOIN all_referencing all_ref
+#                                 ON tp.foreign_key_reference_id = all_ref.table_ref_id
+#                         WHERE INSTR(all_ref.path, CONCAT(',', table_ref.id, ',')) = 0
+#                 )
 
-                SELECT tp.primary_key
-                FROM foreignkeyfieldreferencetable fk_ref_table
-                    JOIN all_referencing all_ref ON fk_ref_table.id = all_ref.table_ref_id
-                    JOIN "table" t ON fk_ref_table.table_id = t.id
-                    JOIN tableparameter tp ON tp.table_id = t.id
-                WHERE tp.foreign_key_reference_id IS NOT NULL
-                FOR UPDATE OF fk_ref_table
-            """
-        )
-    else:
-        # sqlite
-        all_ref_stmt = text(
-            """
-                WITH RECURSIVE all_referencing  AS (
-                    SELECT table_ref.id AS table_ref_id, ',' || table_ref.id || ',' AS path
-                        FROM tableparameter tp
-                            JOIN foreignkeyfieldreferencetable table_ref 
-                            ON table_ref.table_id = tp.table_id
-                        WHERE tp.foreign_key_reference_id = :parent_ref_id
+#                 SELECT tp.primary_key
+#                 FROM foreignkeyfieldreferencetable fk_ref_table
+#                     JOIN all_referencing all_ref ON fk_ref_table.id = all_ref.table_ref_id
+#                     JOIN "table" t ON fk_ref_table.table_id = t.id
+#                     JOIN tableparameter tp ON tp.table_id = t.id
+#                 WHERE tp.foreign_key_reference_id IS NOT NULL
+#                 FOR UPDATE OF fk_ref_table
+#             """
+#         )
+#     else:
+#         # sqlite
+#         all_ref_stmt = text(
+#             """
+#                 WITH RECURSIVE all_referencing  AS (
+#                     SELECT table_ref.id AS table_ref_id, ',' || table_ref.id || ',' AS path
+#                         FROM tableparameter tp
+#                             JOIN foreignkeyfieldreferencetable table_ref 
+#                             ON table_ref.table_id = tp.table_id
+#                         WHERE tp.foreign_key_reference_id = :parent_ref_id
                 
-                    UNION ALL
+#                     UNION ALL
 
-                    SELECT table_ref.id, all_ref.path || table_ref.id || ','
-                        FROM tableparameter tp
-                            JOIN foreignkeyfieldreferencetable table_ref
-                                ON table_ref.table_id = tp.table_id
-                            JOIN all_referencing all_ref
-                                ON tp.foreign_key_reference_id = all_ref.table_ref_id
-                        WHERE INSTR(all_ref.path, ',' || table_ref.id || ',') = 0
-                )
+#                     SELECT table_ref.id, all_ref.path || table_ref.id || ','
+#                         FROM tableparameter tp
+#                             JOIN foreignkeyfieldreferencetable table_ref
+#                                 ON table_ref.table_id = tp.table_id
+#                             JOIN all_referencing all_ref
+#                                 ON tp.foreign_key_reference_id = all_ref.table_ref_id
+#                         WHERE INSTR(all_ref.path, ',' || table_ref.id || ',') = 0
+#                 )
 
-                SELECT tp.primary_key
-                FROM foreignkeyfieldreferencetable fk_ref_table
-                    JOIN all_referencing all_ref ON fk_ref_table.id = all_ref.table_ref_id
-                    JOIN "table" t ON fk_ref_table.table_id = t.id
-                    JOIN tableparameter tp ON tp.table_id = t.id
-                WHERE tp.foreign_key_reference_id IS NOT NULL
+#                 SELECT tp.primary_key
+#                 FROM foreignkeyfieldreferencetable fk_ref_table
+#                     JOIN all_referencing all_ref ON fk_ref_table.id = all_ref.table_ref_id
+#                     JOIN "table" t ON fk_ref_table.table_id = t.id
+#                     JOIN tableparameter tp ON tp.table_id = t.id
+#                 WHERE tp.foreign_key_reference_id IS NOT NULL
 
-            """
-        )
+#             """
+#         )
 
     
 
     
+# # 
+#     # all_ref_stmt += text("""
+#     #     SELECT tp.primary_key
+#     #         FROM foreignkeyfieldreferencetable fk_ref_table
+#     #             JOIN all_referencing all_ref ON fk_ref_table.id = all_ref.table_ref_id
+#     #             JOIN tableparameter tp ON tp.foreign_key_reference_id = fk_ref_table.id
+#     #         FOR UPDATE OF fk_ref_table
+#     # """)
 
-    # all_ref_stmt += text("""
-    #     SELECT tp.primary_key
-    #         FROM foreignkeyfieldreferencetable fk_ref_table
-    #             JOIN all_referencing all_ref ON fk_ref_table.id = all_ref.table_ref_id
-    #             JOIN tableparameter tp ON tp.foreign_key_reference_id = fk_ref_table.id
-    #         FOR UPDATE OF fk_ref_table
-    # """)
+#     all_descendants = db.session.scalars(all_ref_stmt, {"parent_ref_id": table.reference.id}).all()
 
-    all_descendants = db.session.scalars(all_ref_stmt, {"parent_ref_id": table.reference.id}).all()
+#     # print('all descendants', all_descendants)
+#     has_table_parameter_with_pk = any(all_descendants)
 
-    # print('all descendants', all_descendants)
-    has_table_parameter_with_pk = any(all_descendants)
+#     if has_table_parameter_with_pk:
+#         db.session.rollback()
+#         return False, f"Cannot delete {table.name}: At least one table is referencing it as primary key through a foreign key relationship"
 
-    if has_table_parameter_with_pk:
-        db.session.rollback()
-        return False, f"Cannot delete {table.name}: At least one table is referencing it as primary key through a foreign key relationship"
-
-    db.session.delete(table)
-    db.session.commit()
-    return True, None
+#     db.session.delete(table)
+#     db.session.commit()
+#     return True, None
 
         
 
 
 
     
-def delete_API(api):
-    """
-        Same idea from `delete_table(table)`, but now we are checking from the api level.
+# def delete_API(api):
+#     """
+#         Same idea from `delete_table(table)`, but now we are checking from the api level.
 
-        if atleast one the tables are referenced as a foreign key and primary key then the API should be protected from deletion
-    """
+#         if atleast one the tables are referenced as a foreign key and primary key then the API should be protected from deletion
+#     """
 
-    table_ids = [t.id for t in api.tables]
-    # Lock ForeignKeyFieldReferenceTables and prevent Tableparameters from being attached while doing this check
-    fktable_refs_lock =  db.select(ForeignKeyFieldReferenceTable).where(ForeignKeyFieldReferenceTable.table_id.in_(table_ids)).with_for_update()
-    fktables = db.session.scalars(fktable_refs_lock).all()
+#     table_ids = [t.id for t in api.tables]
+#     # Lock ForeignKeyFieldReferenceTables and prevent Tableparameters from being attached while doing this check
+#     fktable_refs_lock =  db.select(ForeignKeyFieldReferenceTable).where(ForeignKeyFieldReferenceTable.table_id.in_(table_ids)).with_for_update()
+#     fktables = db.session.scalars(fktable_refs_lock).all()
 
-    fktable_ids = [fk_t.id for fk_t in fktables]
+#     fktable_ids = [fk_t.id for fk_t in fktables]
 
-    # Check if any of this table foreign key reference is being referenced by another table as their primary key
-    has_fk_as_pk_on_any = db.session.scalar(db.select(
-        db.exists().where(TableParameter.foreign_key_reference_id.in_(fktable_ids), TableParameter.primary_key == True)
-    ))
+#     # Check if any of this table foreign key reference is being referenced by another table as their primary key
+#     has_fk_as_pk_on_any = db.session.scalar(db.select(
+#         db.exists().where(TableParameter.foreign_key_reference_id.in_(fktable_ids), TableParameter.primary_key == True)
+#     ))
 
-    if has_fk_as_pk_on_any:
-        db.session.rollback()
-        return False, f"Cannot delete {api.name}: At least one table is referencing a table on this api via a foreign key relationship and having it as a primary key"
+#     if has_fk_as_pk_on_any:
+#         db.session.rollback()
+#         return False, f"Cannot delete {api.name}: At least one table is referencing a table on this api via a foreign key relationship and having it as a primary key"
 
 
-    db.session.delete(api)
-    db.session.commit()
-    return True, None 
+#     db.session.delete(api)
+#     db.session.commit()
+#     return True, None 
 
 
 """

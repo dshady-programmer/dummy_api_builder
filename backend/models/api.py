@@ -18,9 +18,14 @@ class Api(db.Model):
         tables: Relationship to the Table model for back reference(api.tables gives all tables in the api)
 
     """
-    id = db.Column(db.Integer, primary_key=True)
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     name = db.Column(db.String, nullable=False)
     description = db.Column(db.Text)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='CASCADE'))
     user = db.relationship('User', back_populates='user_apis')
     tables = db.relationship('Table', back_populates='api', cascade='all, delete-orphan', passive_deletes=True)
+
+    __table_args__ = (
+        db.UniqueConstraint('user_id', 'name', name='uq_api_name_user_id'),
+        {'sqlite_autoincrement': True}  # Ensure that the id is always incremented and not reused after deletion
+    )

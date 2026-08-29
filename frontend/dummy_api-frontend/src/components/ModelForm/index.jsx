@@ -36,7 +36,7 @@ const Index = ({ fList, mParam, endpoint, title, btnTitle, method }) => {
                 targetValues = []
                 for (const v of e.target.selectedOptions) targetValues.push(v.value)
             } else {
-                targetValues = e.target.value;
+                targetValues = e.target.value.trim();
             }
             let mapValues;
             if (getTbl_param) {

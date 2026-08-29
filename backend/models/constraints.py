@@ -31,5 +31,7 @@ class Constraint(db.Model):
                         exception is primary key as the default value is generated automatically for primary keys 
                             and uniqueness would be guaranteed
     """
-    id = db.Column(db.Integer, primary_key=True)
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     name = db.Column(db.Enum(ValidConstraints), default=ValidConstraints.nullable, nullable=False, unique=True)
+
+    __table_args__ = {'sqlite_autoincrement': True}  # Ensure that the id is always incremented and not reused after deletion
