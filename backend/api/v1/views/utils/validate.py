@@ -284,7 +284,7 @@ def foreign_key_ref_table_validator(table_param, param_dt, param, user):
 def foreign_key_on_delete_validator(table_param, param, constraints):
 
     # check for primary key
-    table_level_on_delete = param.get("table_on_delete")
+    table_level_on_delete = param.get("table_level_on_delete")
     row_level_on_delete = param.get("row_level_on_delete")
 
     if table_level_on_delete not in ["protect", "cascade"] or row_level_on_delete not in ["protect", "cascade", "set_null"]:
@@ -295,7 +295,7 @@ def foreign_key_on_delete_validator(table_param, param, constraints):
         if row_level_on_delete not in ['protect', 'cascade']:
             row_level_on_delete = 'protect'
     else:
-        if row_level_on_delete == 'set_null' and nullable not in 'constraints':
+        if row_level_on_delete == 'set_null' and "nullable" not in constraints:
             row_level_on_delete = 'protect'
 
 

@@ -57,6 +57,7 @@ const Index = ({ fList, mParam, endpoint, title, btnTitle, method }) => {
     }
     const handleSubmit = async e => {
         e.preventDefault()
+        if (loading) return
         setState({ type: "", message: "" })
         if (!modelParam.name) {
             setState({ type: "error", message: "Provide Model Name" })
@@ -75,14 +76,14 @@ const Index = ({ fList, mParam, endpoint, title, btnTitle, method }) => {
             })
             const data = await res.json()
             // console.log(data)
-            if (res.status == 200) {
-                navigate(`/my_apis/${params.apiId}/model/${data.id}`)
+            if (res.status == 201) {
+                navigate(`/my_apis/${params.apiId}/model/${data.data.id}`)
             } else {
                 if (res.status == 401) {
                     Cookies.remove("token", { path: '/' })
                     navigate("/login", { replace: true, state: { path: location.pathname } })
                 }
-                setState({ type: "error", message: data.error || "Couldn't complete the request" })
+                setState({ type: data.status, message: data.message || "Couldn't complete the request" })
             }
         } catch (err) {
             setState({ type: "error", message: "Something went wrong" })
@@ -148,25 +149,58 @@ const Index = ({ fList, mParam, endpoint, title, btnTitle, method }) => {
                                                 <option value="default" selected={currentTbl_params?.constraints?.includes("default") ? true : false}>Default value</option>                  
                                             </select>
                                         </div>
-                                        <div>
+                                        {
+                                            currentTbl_params?.constraints?.includes("foreign_key") &&  (
+                                                <>
+                                                    <div>
 
-                                            <label htmlFor={`field-fk-ref-${field}`}>Foreign Key Reference Table</label>
-                                            <input type="text" id={`field-fk-ref-${field}`} name={`foreign_key_rf-${field}`} placeholder="api.table" value={currentTbl_params?.foreign_key_rf || ""} onChange={handleChange} />
+                                                        <label htmlFor={`field-fk-ref-${field}`}>Foreign Key Reference Table</label>
+                                                        <input type="text" id={`field-fk-ref-${field}`} name={`foreign_key_rf-${field}`} placeholder="api.table" value={currentTbl_params?.foreign_key_rf || ""} onChange={handleChange} />
 
-                                        </div>
-                                        <div>
-                                            <label htmlFor={`field-default-${field}`}>Default value</label>
-                                            <input type="text" id={`field-default-${field}`} name={`default_value-${field}`} placeholder="default" value={currentTbl_params?.default_value || ""} onChange={handleChange} />
+                                                    </div>
+                                                    <div>
 
-                                        </div>
-                                        <div>
-                                            <small><b>Note: </b> &nbsp;If you select primary key and default constraint it will autogenerate keys for your model depending on the data type</small>
+                                                        <label htmlFor={`table-level-on-delete-${field}`}>Table Level on Delete</label>
+                                                        <select name={`table_level_on_delete-${field}`} id={`table-level-on-delete-${field}`} value={currentTbl_params?.table_level_on_delete || "protect"} onChange={handleChange}>
+                                                            <option value="protect">PROTECT</option>
+                                                            <option value="cascade" disabled={currentTbl_params?.constraints?.includes("primary_key")}>CASCADE</option>
+                                                        </select>
 
-                                        </div>
-                                        <div>
-                                            <small>For string/text data types primary key default values would be uuid regardless of the length constraint field length constraint would only validate on user passed pk values</small>
+                                                    </div>
+                                                    <div>
 
-                                        </div>
+                                                        <label htmlFor={`row-level-on-delete-${field}`}>Row Level on Delete</label>
+                                                        <select name={`row_level_on_delete-${field}`} id={`row-level-on-delete-${field}`} value={currentTbl_params?.row_level_on_delete || "protect"} onChange={handleChange}>
+                                                            <option value="protect">PROTECT</option>
+                                                            <option value="cascade">CASCADE</option>
+                                                            <option value="set_null" disabled={!currentTbl_params?.constraints?.includes("nullable")}>SET_NULL</option>
+                                                        </select>
+                                                    </div>
+                                                </>
+
+                                            )
+                                        }
+  
+                                        {
+                                            currentTbl_params?.constraints?.includes("default") && (
+                                                <>
+                                                    <div>
+                                                        <label htmlFor={`field-default-${field}`}>Default value</label>
+                                                        <input type="text" id={`field-default-${field}`} name={`default_value-${field}`} placeholder="default" value={currentTbl_params?.default_value || ""} onChange={handleChange} />
+                                                    </div>
+                                                    <div>
+                                                        <small><b>Note: </b> &nbsp;If you select primary key and default constraint it will autogenerate keys for your model depending on the data type</small>
+                                                    </div>
+                                                    <div>
+                                                        <small>For string/text data types primary key default values would be uuid regardless of the length constraint field length constraint would only validate on user passed pk values</small>
+                                                    </div>
+                                                    <div>
+                                                        <small>For date and datetimes use <em>created</em> to set the default value to the current date and time on creation, any other non-date value including empty strings defaults to <em>updated_at</em> timestamp</small>
+                                                    </div>
+                                                </>
+                                            )
+                                        }
+
 
                                         {/* currentTbl_params?.constraints?.includes("default") */}
                                         <button type="button" style={{ float: "right" }} onClick={() => {

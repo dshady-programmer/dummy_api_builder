@@ -51,8 +51,8 @@ class UserLimit(db.Model):
         current_tables: Number of tables the user has created
         check_constraint: Ensure current_rows does not exceed max_rows, Ensure current_tables doesn't exceed max tables
 
-        MAX_ROW_FOR_USER: 
-        MAX_TABLE_FOR_USER:
+        MAX_ROW_FOR_USER: 2000
+        MAX_TABLE_FOR_USER: 100
             Both hard limits for the maximum permissible rows and tables.
     """
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)

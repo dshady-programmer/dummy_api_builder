@@ -5,11 +5,13 @@ import { AppContext } from '../../context'
 import { Bars } from 'react-loader-spinner'
 import ErrorElement from "../../components/ErrorElement"
 const Index = () => {
-    const { fetchApiDetail, apiDetail, loading } = useContext(AppContext)
+    const { fetchApiDetail, apiDetail, apiDetailNotFound, loading } = useContext(AppContext)
     const params = useParams()
     useEffect(() => {
-        fetchApiDetail(params.apiId)
-    }, [])
+        let cancelled = false
+        fetchApiDetail(params.apiId, cancelled)
+        return () => cancelled = true
+    }, [fetchApiDetail, params.apiId])
     return (
         <>
             {
@@ -24,7 +26,7 @@ const Index = () => {
                         wrapperClass="loading_element"
                         visible={true}
                     />
-                </div> : !loading && !apiDetail ? <ErrorElement /> :
+                </div> : !loading && !apiDetail && apiDetailNotFound ? <ErrorElement /> :
                     <FormCreatePage title="EDIT API" nameValue={apiDetail.name} descValue={apiDetail.description} buttonTitle="EDIT" endpoint={`update_api/${params.apiId}`} method="PUT" />
 
             }

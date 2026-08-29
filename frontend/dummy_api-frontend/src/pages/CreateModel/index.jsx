@@ -6,10 +6,14 @@ import ErrorElement from "../../components/ErrorElement"
 
 const Index = () => {
     const params = useParams()
-    const { loading, fetchApiDetail, apiDetail } = useContext(AppContext)
+    const { loading, fetchApiDetail, apiDetail, apiDetailNotFound } = useContext(AppContext)
     useEffect(() => {
-        if (!apiDetail) fetchApiDetail(params.apiId)
-    }, [params.apiId])
+        let cancelled = false
+        if (!apiDetail) fetchApiDetail(params.apiId, cancelled)
+        return () => {
+            cancelled = true
+        }
+    }, [params.apiId, apiDetail, fetchApiDetail])
     const mParam = {
         name: "",
         description: "",
@@ -18,7 +22,7 @@ const Index = () => {
     return (
         <>
             {
-                loading ? "" : !loading && !apiDetail ? <ErrorElement /> : <ModelForm fList={[]} mParam={mParam} title={"CREATE NEW MODEL"} btnTitle="CREATE" method="POST" endpoint="create_model" />
+                loading ? "" : !loading && !apiDetail && apiDetailNotFound ? <ErrorElement /> : <ModelForm fList={[]} mParam={mParam} title={"CREATE NEW MODEL"} btnTitle="CREATE" method="POST" endpoint="create_model" />
 
             }
         </>

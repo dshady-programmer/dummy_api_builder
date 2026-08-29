@@ -30,7 +30,7 @@ class Table(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     name = db.Column(db.String, nullable=False)
     description = db.Column(db.Text)
-    api_id = db.Column(db.Integer, db.ForeignKey('api.id', ondelete='CASCADE'))
+    api_id = db.Column(db.Integer, db.ForeignKey('api.id', ondelete='CASCADE'), index=True)
     api = db.relationship('Api', back_populates='tables')
     table_parameters = db.relationship('TableParameter', back_populates='table', cascade="all, delete-orphan", passive_deletes=True)
     reference = db.relationship('ForeignKeyFieldReferenceTable', back_populates='table_reference', cascade='all, delete-orphan', uselist=False, passive_deletes=True)

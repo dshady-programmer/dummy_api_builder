@@ -21,11 +21,12 @@ class Api(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     name = db.Column(db.String, nullable=False)
     description = db.Column(db.Text)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='CASCADE'))
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='CASCADE'), index=True)
     user = db.relationship('User', back_populates='user_apis')
     tables = db.relationship('Table', back_populates='api', cascade='all, delete-orphan', passive_deletes=True)
 
     __table_args__ = (
         db.UniqueConstraint('user_id', 'name', name='uq_api_name_user_id'),
+        db.Index("idx_api_id_user_id", "id", "user_id"),
         {'sqlite_autoincrement': True}  # Ensure that the id is always incremented and not reused after deletion
     )

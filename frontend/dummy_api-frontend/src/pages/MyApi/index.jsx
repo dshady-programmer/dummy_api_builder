@@ -38,7 +38,7 @@ const Index = () => {
             fetchApis();
             setInvalidate(false)
         }
-    }, [invalidate, apis])
+    }, [invalidate, apis, fetchUser, fetchApis, user, setInvalidate])
     return (
     
             <div>

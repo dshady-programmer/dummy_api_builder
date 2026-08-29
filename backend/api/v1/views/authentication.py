@@ -3,7 +3,8 @@ Define all user's authentication routes here
 """
 
 from api.v1.views import app_views
-from flask import request, jsonify
+from .utils.response import format_response
+from flask import request
 from werkzeug.security import generate_password_hash, check_password_hash
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -22,17 +23,21 @@ def signup():
     password = data.get("password")
     confirm_password = data.get("confirm_password")
     if not all([email, password, confirm_password]):
-        return (
-            jsonify(
-                {"error": "email, password, confirm_password fields are all required"}
-            ),
-            401,
-        )
+        return format_response(status="error", 
+                               message="email, password, confirm_password fields are all required", 
+                               code=401)
+
     if len(password) < 8 or password != confirm_password:
-        return jsonify({"error": "Password validation failed"}), 401
-    user = User.query.filter_by(email=email).first()
+        return format_response(status="error", 
+                               message="Password validation failed", 
+                               code=401)
+    
+    user_exists_stmt = db.select(db.exists().where(User.email==email))
+    user = db.session.scalar(user_exists_stmt)
     if user:
-        return jsonify({"message": "Account already exists, please login"}), 202
+        return format_response(status="redirect", 
+                               message="Account already exists, please login",
+                               code=202)
     hash_password = generate_password_hash(password)  # Hash password
     api_token = (
         f"{str(uuid.uuid4())}-{str(uuid.uuid4())}"  # api_token = api key for the user
@@ -40,7 +45,8 @@ def signup():
     user = User(email=email, password=hash_password, api_token=api_token)
     db.session.add(user)
     db.session.commit()
-    return jsonify({"message": "Account registered successfully"}), 201
+    return format_response(message= "Account registered successfully", code=201)
+
 
 
 @app_views.route("/login", methods=["POST"])
@@ -51,11 +57,11 @@ def login():
     # print("email and password", email, password)
 
     if not all([email, password]):
-        return jsonify({"error": "email and password fields are required"}), 401
-
-    user = User.query.filter_by(email=email).first()
+        return format_response(status="error", message="email and password fields are required", code=401)
+    user_stmt = db.select(User).filter_by(email=email)
+    user = db.session.scalar(user_stmt)
     if not user:
-        return jsonify({"error": "Incorrect email or password"}), 401
+        return format_response(status="error", message="Incorrect email or password", code=401)
     new_public_id = None
     if check_password_hash(user.password, password):
         # Generates new public_id after every login
@@ -68,9 +74,8 @@ def login():
             while True:
                 # Ensuring public_id is unique before updating
                 new_public_id = str(uuid.uuid4())
-                check_associated_public_id = User.query.filter_by(
-                    public_id=new_public_id
-                ).first()
+                pid_exist_stmt = db.select(db.exists().where(User.public_id==new_public_id))
+                check_associated_public_id = db.session.scalar(pid_exist_stmt)
                 if not check_associated_public_id:
                     break
 
@@ -91,16 +96,17 @@ def login():
             app.config["SECRET_KEY"],
             algorithm="HS256",
         )
-
-        return jsonify({"token": token}), 200
-    return jsonify({"error": "Incorrect email or password"}), 401
+        
+        return format_response(data=token)
+        
+    return format_response(status="error", message="Incorrect email or password", code=401)
 
 
 @app_views.route("/me")
 @login_required
 def get_me(user):
     details = {"email": user.email, "api_token": user.api_token}
-    return jsonify(details), 200
+    return format_response(data=details)
 
 
 @app_views.route("/logout", methods=["POST"])
@@ -108,4 +114,4 @@ def get_me(user):
 def logout(user):
     user.public_id = None
     db.session.commit()
-    return jsonify({"message": "Logged out"}), 200
+    return format_response(message="Logged out")

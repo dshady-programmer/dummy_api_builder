@@ -23,6 +23,7 @@ function Index() {
     }
     const handleSubmit = async e => {
         e.preventDefault()
+        if (loading) return
         setStatus({ type: "", message: "" });
         if (!credentials.password && !credentials.email) {
             setStatus({ type: "error", message: "All fields must be filled" })
@@ -43,10 +44,10 @@ function Index() {
             // console.log(req, req.statusText)
             const data = await req.json();
             if (req.status === 401)
-                setStatus({ type: "error", message: data.error })
+                setStatus({ type: data.status, message: data.message })
             else if (req.status === 200) {
                 setStatus({ type: "success", message: "Login Succesful" })
-                Cookies.set('token', data.token, { path: '/', expires: (1) })
+                Cookies.set('token', data.data, { path: '/', expires: (1) })
                 setTimeout(() => {
                     if (location.state?.path)
                         navigate(location.state.path)
@@ -56,7 +57,7 @@ function Index() {
             }
         } catch (err) {
             console.log(err)
-            setStatus({ type: "error", message: "Sorry!, an error occured" })
+            setStatus({ type: "error", message: "Sorry!, an error occured, Check your internet connection" })
         } finally {
             setLoading(false)
         }
@@ -103,7 +104,7 @@ function Index() {
                                 </div>)
                             }
 
-                            <button type="submit">
+                            <button type="submit" disabled={loading}>
                                 {loading ?
                                     <Rings
                                         height="30"

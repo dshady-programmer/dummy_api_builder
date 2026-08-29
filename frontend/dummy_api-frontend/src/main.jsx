@@ -39,38 +39,39 @@ const router = createBrowserRouter([
   {
     path: '/my_apis',
     element: <RequireAuth><Root /></RequireAuth>,
+    errorElement: <ErrorPage />,
     children: [
       {
         path: "",
-        element: <RequireAuth><HomePage /></RequireAuth>
+        element: <HomePage />
       },
       {
         path: "test_endpoint",
-        element: <RequireAuth><TestEndpoint /></RequireAuth>
+        element: <TestEndpoint />
       },
       {
         path: ":apiId",
-        element: <RequireAuth><MyApiDetail /></RequireAuth>
+        element: <MyApiDetail />
       },
       {
         path: "create",
-        element: <RequireAuth><CreateAPI /></RequireAuth>
+        element: <CreateAPI />
       },
       {
         path: ":apiId/edit",
-        element: <RequireAuth><EditApiPage /></RequireAuth>
+        element: <EditApiPage />
       },
       {
         path: ":apiId/model/create",
-        element: <RequireAuth><CreateModel /></RequireAuth>
+        element: <CreateModel />
       },
       {
         path: ":apiId/model/:modelId",
-        element: <RequireAuth><ModelPage /></RequireAuth>
+        element: <ModelPage />
       },
       {
         path: ":apiId/model/:modelId/edit",
-        element: <RequireAuth><EditModel /></RequireAuth>
+        element: <EditModel />
       }
 
     ]

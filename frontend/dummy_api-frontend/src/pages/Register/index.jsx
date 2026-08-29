@@ -19,6 +19,7 @@ const Index = () => {
     }
     const handleSubmit = async (e) => {
         e.preventDefault()
+        if (loading) return
         setStatus({ type: "", message: "" });
         if (!credentials.password && !credentials.email) {
             setStatus({ type: "error", message: "All fields must be filled" });
@@ -50,11 +51,11 @@ const Index = () => {
             const data = await req.json();
             console.log(data, req.status)
             if (req.status === 401)
-                setStatus({ type: "error", message: data.error })
+                setStatus({ type: data.status, message: data.message})
             else if (req.status === 202)
-                setStatus({ type: "redirect", message: data.message })
+                setStatus({ type: data.status, message: data.message })
             else if (req.status === 201) {
-                setStatus({ type: "success", message: data.message })
+                setStatus({ type: data.status, message: data.message })
                 setTimeout(() => {
                     navigate('/login')
                 }, 3000)

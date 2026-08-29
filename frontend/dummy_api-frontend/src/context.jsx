@@ -16,11 +16,13 @@ const AppProvider = ({ children }) => {
     const [userLoading, setUserLoading] = React.useState(false)
     const [invalidate, setInvalidate] = React.useState(false)
     const [apiDetail, setApiDetail] = React.useState(null)
+    const [apiDetailNotFound, setApiDetailNotFound] = React.useState(false)
     const navigate = useNavigate();
 
 
 
-    const fetchApiDetail = async (apiId) => {
+    const fetchApiDetail = useCallback(async (apiId, cancelled=false, retries=1) => {
+        if (loading && retries < 2) return
         const token = Cookies.get('token', { path: '/' })
         setLoading(true)
         try {
@@ -30,28 +32,48 @@ const AppProvider = ({ children }) => {
                 }
             });
             const data = await response.json();
+            if (cancelled) return // prevent a stale fetch from overriding current request state.
             if (response.status === 200) {
 
-                setApiDetail(data)
-            } else {
+                setApiDetail(data.data)
+            } 
+            else if (response.status >= 500) {
+                if (retries < 4) {
+                    setTimeout(
+                        () => fetchApiDetail(apiId, false, retries + 1), 
+                        1000 * retries ** (Math.round(Math.random() * retries) || 1)
+                    )
+                }
+                
+            }
+            else {
                 setApiDetail(null)
 
                 if (response.status === 401) {
                     Cookies.remove("token", { path: '/' })
                     navigate("/login", { replace: true, state: { path: location.pathname } })
+                } else if (response.status === 404) {
+                    setApiDetailNotFound(true)
                 }
 
                 
             }
         } catch (err) {
             console.log("error fetching api detail", err)
+            if (retries < 4) {
+                setTimeout(
+                    () => fetchApiDetail(apiId, false, retries + 1), 
+                    1000 * retries ** (Math.round(Math.random() * retries) || 1)
+                )
+            }
             setApiDetail(null)
         } finally {
             setLoading(false)
         }
 
-    }
-    const fetchApis = async () => {
+    }, [navigate, loading])
+    const fetchApis = useCallback(async (retries=1) => {
+        if (apiLoading && retries < 2) return
         const token = Cookies.get('token', { path: '/' })
         setApiLoading(true)
         try {
@@ -62,10 +84,18 @@ const AppProvider = ({ children }) => {
                 }
             });
             const data = await response.json();
-            if (response.status === 200) setApis(data)
+            if (response.status === 200) setApis(data.data)
+            else if (response.status >= 500) {
+                if (retries < 4 && !apis) {
+                    setTimeout(
+                        () => fetchApis(retries + 1), 
+                        1000 * retries ** (Math.round(Math.random() * retries) || 1)
+                    )
+                }
+                
+            }
             else {
                 setApis(null)
-
                 if (response.status === 401) {
                     Cookies.remove("token", { path: '/' })
                     navigate("/login", { replace: true, state: { path: location.pathname } })
@@ -75,14 +105,20 @@ const AppProvider = ({ children }) => {
             }
         } catch (err) {
             console.log("error fetchin apis", err)
-            setApis(null)
+            if (retries < 4 && !apis) {
+                setTimeout(
+                    () => fetchApis(retries + 1), 
+                    1000 * retries ** (Math.round(Math.random() * retries) || 1)
+                )
+            }
         } finally {
-
             setApiLoading(false)
-        } 
+        }
         
-    }
-    const fetchUser = async () => {
+    }, [navigate, apiLoading, apis])
+
+    const fetchUser = useCallback(async (retries=1) => {
+        if (userLoading && retries < 2) return
         const token = Cookies.get('token', { path: '/' })
         setUserLoading(true)
         try {
@@ -93,7 +129,16 @@ const AppProvider = ({ children }) => {
                 }
             });
             const data = await response.json();
-            if (response.status === 200) setUser(data)
+            if (response.status === 200) setUser(data.data)
+            else if (response.status >= 500) {
+                if (retries < 4 && !user) {
+                    setTimeout(
+                        () => fetchUser(retries + 1), 
+                        1000 * retries ** (Math.round(Math.random() * retries) || 1)
+                    )
+                }
+                
+            }
             else {
                 setUser(null)
 
@@ -105,12 +150,40 @@ const AppProvider = ({ children }) => {
             }
         } catch (err) {
             console.log('error fetching user', err)
-            setUser(null)
+            if (retries < 4 && !user) {
+                setTimeout(
+                    () => fetchUser(retries + 1), 
+                    1000 * retries ** (Math.round(Math.random() * retries) || 1)
+                )
+            }
+            
         } finally {
 
             setUserLoading(false) 
         }
-    }
+    }, [navigate, userLoading, user])
+
+    const logoutUser = useCallback(async () => {
+        const token = Cookies.get('token', { path: '/' })
+        try {
+            const response = await fetch(`${hostUrl}/api/v1/logout`, {
+                method: "POST",
+                headers: {
+                    'x-access-token': token
+                }
+            });
+            if (response.status === 200 || response.status == 401) {
+                Cookies.remove("token", { path: '/' })
+                return true
+            }
+        } catch (err) {
+            console.log("error", err)
+
+        } 
+        return false
+
+    }, [])
+
     const fetchModel = useCallback(async (apiId, modelId) => {
         const token = Cookies.get('token', { path: '/' })
         setLoading(true)
@@ -144,7 +217,8 @@ const AppProvider = ({ children }) => {
     return (<AppContext.Provider value={{
         user, fetchUser, apis, fetchApis, model, fetchModel,
         loading, userLoading, invalidate, setInvalidate,
-        apiDetail, fetchApiDetail, apiLoading
+        apiDetail, fetchApiDetail, apiLoading, logoutUser,
+        apiDetailNotFound
     }}> {children} </AppContext.Provider>)
 }
 export default AppProvider;

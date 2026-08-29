@@ -4,12 +4,13 @@ import { Link, useNavigate } from "react-router-dom"
 import avatar from "../../assets/avatar.svg"
 import caretDown from "../../assets/caret-white.svg"
 import caretUp from "../../assets/caret-up-white.svg"
-import { useContext, useState } from 'react'
+import { useCallback, useContext, useState } from 'react'
 import { AppContext } from '../../context'
 import Cookies from 'js-cookie'
 const Index = ({ navs, activeNav, type }) => {
     const context = useContext(AppContext);
     const user = context?.user;
+    const logoutUser = context?.logoutUser
     const [openUserInfo, setOpenUserInfo] = useState(false)
     const [openNav, setOpenNav] = useState(false)
 
@@ -21,7 +22,13 @@ const Index = ({ navs, activeNav, type }) => {
             return document.execCommand('copy', true, text);
         }
     }
-
+  
+    const logout = useCallback(async () => {
+        const loggedOut = await logoutUser()
+        if (loggedOut) 
+            navigate('/login', { replace: true})
+        else alert("Couldn't logout, try again")
+    }, [logoutUser, navigate])
     return (
         <header>
             <div>
@@ -52,10 +59,7 @@ const Index = ({ navs, activeNav, type }) => {
                                         }, 3000)
                                     }
                                     }>copy</span></p>
-                                    <button onClick={() => {
-                                        Cookies.remove("token", { path: '/' })
-                                        navigate('/login', { replace: true})
-                                    }}>Log out</button>
+                                    <button onClick={logout}>Log out</button>
                                 </div>
                             }
 
@@ -93,10 +97,7 @@ const Index = ({ navs, activeNav, type }) => {
                             }
                             }>copy</span></p></li>
                             <li style={{ textDecoration: "none" }}>
-                                <button onClick={() => {
-                                    Cookies.remove("token", { path: '/' })
-                                    navigate('/login')
-                                }}>Log out</button>
+                                <button onClick={logout}>Log out</button>
                             </li>
                         </>
                     }

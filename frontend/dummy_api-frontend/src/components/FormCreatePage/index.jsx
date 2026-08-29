@@ -43,15 +43,15 @@ const Index = ({ title, nameValue, descValue, buttonTitle, endpoint, method }) =
                 Cookies.remove("token", { path: '/' })
                 navigate("/login", { replace: true, state: { path: location.pathname } })
             }
-            if (res.status !== 200 && data.error) {
-                setState({ type: "error", message: data.error })
+            if (res.status !== 200 && data.status == "error") {
+                setState({ type: data.status, message: data.message })
             } else if (res.status === 200) {
                 setInvalidate(true)
-                navigate(`/my_apis/${data.id}`)
+                navigate(`/my_apis/${data.data.id}`)
             }
 
         } catch (err) {
-            setState({ type: "error", message: "An error occured" })
+            setState({ type: "error", message: "An error occured, check your internet connection" })
         } finally {
             setLoading(false)
         }

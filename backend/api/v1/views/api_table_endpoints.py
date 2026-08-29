@@ -5,6 +5,7 @@ tables/model in an api
 
 from api.v1.views import app_views
 from flask import request, jsonify
+from .utils.response import format_response
 from api.v1.auth.auth import login_required
 from models import db, Api, Table, TableParameter, Entry, EntryList, Relationship
 from .utils.validate import validate_name
@@ -40,35 +41,34 @@ def create_model(user, api_id):
     # Tableparameter refers to the model fields (like name = string() etc..)
     # table_parameters would contain a list of dictionaries defining the attribute for the model
     if type(table_parameters) != list or not len(table_parameters):
-        return jsonify({"error": "table parameters are required"}), 400
-    
+        return format_response(status="error", message="table parameters are required", code=400)
     if not name:
-        return jsonify({"error": "name of the model is required"}), 400
+        return format_response(status="error", message="name of the model is required", code=400)
 
     api_stmt = db.select(Api).filter_by(id=api_id, user_id=user.id)
     api = db.session.scalar(api_stmt)
     if not api:
-        return jsonify({"error": "no api of such is associated with the user"}), 400
+        return format_response(status="error", message="no api of such is associated with the user", code=400)
 
     table_stmt = db.select(Table).filter_by(api_id=api_id, name=name)
     table = db.session.scalar(table_stmt)
     if table:
-        return jsonify({"error": "Table already exists"}), 400
+        return format_response(status="error", message="Table already exists", code=400)
     
     if not validate_name(name):
-        return jsonify({"error": "Table name must be a valid python identifier, not a python keyword and must be atleast 3 letters"}), 400
+        return format_response(status="error", message="Table name must be a valid python identifier, not a python keyword and must be atleast 3 letters", code=400)
     new_table = Table(name=name, description=description, api_id=api_id)
     db.session.add(new_table)
     try:
         response = parse_and_create_tableparameters(table_parameters, new_table, user)
         if 'error' in response:
-            return jsonify(response), 400
+            return format_response(status="error", message=response['error'], code=400)
 
 
-        return jsonify(response), 200
+        return format_response(data=response, code=201)
     except Exception as e:
         print(e)
-        return jsonify({"status": "error", "message": "Database Integrity Error"}), 409
+        return format_response(status="error", message="Database Integrity Error", code=409)
 
 
 
