@@ -27,6 +27,7 @@ class Api(db.Model):
 
     __table_args__ = (
         db.UniqueConstraint('user_id', 'name', name='uq_api_name_user_id'),
+        db.UniqueConstraint('user_id', 'id', name='uq_api_id_user_id'),
         db.Index("idx_api_id_user_id", "id", "user_id"),
         {'sqlite_autoincrement': True}  # Ensure that the id is always incremented and not reused after deletion
     )

@@ -11,6 +11,7 @@ import {json} from "@codemirror/lang-json"
 const Index = () => {
     const [endpointParam, setEndpointParam] = useState({ "method": "GET", "data": "", "api": "", "model": "", "model_id": "", "query_params": "" });
     const [response, setResponse] = useState(null)
+    const [responseStatus, setResponseStatus] = useState(null)
     const { user } = useContext(AppContext)
 
     const copyTextToClipboard = async (text) => {
@@ -36,7 +37,7 @@ const Index = () => {
     }
 
     const handleChange = (e) => {
-        setEndpointParam(prev => ({ ...prev, [e.target.name]: e.target.name === "data" ? e.target.value : e.target.value.trim() }))
+        setEndpointParam(prev => ({ ...prev, [e.target.name]: e.target.value.trim() }))
     }
     const handleDataChange = useCallback((val, viewUpdate) => {
 
@@ -48,7 +49,9 @@ const Index = () => {
         e.preventDefault()
         console.log("endpointParam", endpointParam)
         setResponse(null)
+        setResponseStatus(null)
         if (!endpointParam.api || !endpointParam.model) {
+            
             return;
         }
         let fullUrlPath = `${endpointPrefix}${user.api_token}/my_api/${endpointParam.api}/model/${endpointParam.model}/${endpointParam.model_id}`
@@ -68,6 +71,7 @@ const Index = () => {
                     })
                 })
                 const resp_data = await resp.json()
+                setResponseStatus(resp.status)
                 setResponse(resp_data)
             } catch (err) {
                 setResponse(err.message)
@@ -139,7 +143,7 @@ const Index = () => {
                             <option value="DELETE">DELETE</option>
                         </select>
                     </div>
-                    <div>
+                    <div style={"height:250px;"}>
                         <label htmlFor="data">Data</label>
                         <CodeMirror name="data" id="data" value={endpointParam.data} height="200px" extensions={[json()]} onChange={handleDataChange} />
                         {/* <textarea name="data" id="data" onChange={handleChange} value={endpointParam.data}></textarea> */}
@@ -153,6 +157,7 @@ const Index = () => {
             {
                 response && <section className="response_section">
                     <h2>Response</h2>
+                    {responseStatus && <p style={`color: ${responseStatus < 300 ? "green" : "red"}`}>Status: {responseStatus}</p>}
                     <div className="response_data">
                         <pre>
                             {JSON.stringify(response, undefined, 3)}

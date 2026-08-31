@@ -82,7 +82,8 @@ const Index = ({ fList, mParam, endpoint, title, btnTitle, method }) => {
                 if (res.status == 401) {
                     Cookies.remove("token", { path: '/' })
                     navigate("/login", { replace: true, state: { path: location.pathname } })
-                }
+                    return
+                } 
                 setState({ type: data.status, message: data.message || "Couldn't complete the request" })
             }
         } catch (err) {

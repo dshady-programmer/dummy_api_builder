@@ -26,7 +26,7 @@ const Index = () => {
                         wrapperClass="loading_element"
                         visible={true}
                     />
-                </div> : !loading && !apiDetail && apiDetailNotFound ? <ErrorElement /> :
+                </div> : (!loading && !apiDetail) || (!loading && apiDetailNotFound) ? <ErrorElement /> :
                     <FormCreatePage title="EDIT API" nameValue={apiDetail.name} descValue={apiDetail.description} buttonTitle="EDIT" endpoint={`update_api/${params.apiId}`} method="PUT" />
 
             }

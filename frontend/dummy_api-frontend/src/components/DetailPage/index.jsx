@@ -58,7 +58,7 @@ const Index = () => {
     return (
         <div className="detail-wrapper">
             {
-                !loading && !apiDetail && apiDetailNotFound ? <ErrorElement /> :
+                (!loading && !apiDetail) || (!loading && apiDetailNotFound) ? <ErrorElement /> :
                     <>
                         <section className="detail_header">
                             <h2>{apiDetail?.name}</h2>

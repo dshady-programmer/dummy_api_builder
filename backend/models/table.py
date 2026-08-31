@@ -39,5 +39,6 @@ class Table(db.Model):
 
     __table_args__ = (
         db.UniqueConstraint('api_id', 'name', name='uq_table_api_id_table_name'),
+        db.UniqueConstraint('api_id', 'id', name='uq_table_api_id_table_id'),
         {'sqlite_autoincrement': True}  # Ensure that the id is always incremented and not reused after deletion
     )

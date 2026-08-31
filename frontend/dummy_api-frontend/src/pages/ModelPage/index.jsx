@@ -11,7 +11,7 @@ import { hostUrl } from "../../variables"
 
 const Index = () => {
     const navigate = useNavigate()
-    const { fetchModel, model, user, loading } = useContext(AppContext)
+    const { fetchModel, model, user, loading, modelDetailNotFound } = useContext(AppContext)
     const [openSeedPopup, setOpenSeedPopup] = useState(false)
     const token = Cookies.get('token', { path: '/' })
     const params = useParams()
@@ -31,10 +31,10 @@ const Index = () => {
                     })
         if (res.status === 204) {
             alert("Model deleted successfully")
-        } else if (res.status === 400) {
+        }
+        else if (res.status === 400) {
             const msg = await res.json()
-            if ("error" in msg)
-                alert(msg.error)
+            alert(msg.message || "An error occurred while deleting the model.")
             return
         }
 
@@ -52,15 +52,24 @@ const Index = () => {
                             "x-access-token": token
                         }, 
                     })
+
         if (res.status === 204) {
             fetchModel(apiId, modelId)
             alert("Model table truncated successfully")
+            return
 
+        } else if (res.status === 400) {
+            const msg = await res.json()
+            alert(msg.message || "An error occurred while truncating the model.")
+            return
         }
+        navigate(`/my_apis/${params.apiId}`)
     }
 
     useEffect(() => {
-        fetchModel(apiId, modelId)
+        let cancelled = false
+        fetchModel(apiId, modelId, cancelled)
+        return () => cancelled = true
     }, [apiId, modelId, fetchModel])
 
     if (loading) {
@@ -80,7 +89,7 @@ const Index = () => {
     return (
         <div className="modelPage-wrapper">
             {
-                !loading && !model ? <ErrorElement /> : <>
+                (!loading && !model) || (!loading && modelDetailNotFound) ? <ErrorElement /> : <>
                     <section className="modelPage_header">
                         <h2>{model?.name}</h2>
                         <p>{model?.desc}</p>
@@ -156,11 +165,12 @@ const SeedPopup = ({ openSeedPopup, setOpenSeedPopup, user, model, refetchModel 
         e.preventDefault()
         const formId = e.target.id
         const formData = new FormData(e.target)
-        console.log("user", user, model)
+        // console.log("user", user, model)
         if (formId === "autogenerate_form") {
             const numRows = formData.get('num_rows') || 100
 
-            // Handle auto-generate
+            // Handle auto-generate 
+            // coming in v2.
         } else {
 
             const csvFile = formData.get('csv_file')
@@ -248,7 +258,9 @@ const SeedPopup = ({ openSeedPopup, setOpenSeedPopup, user, model, refetchModel 
                             </form>
 
                         </div>
-                        <div className="seedPopup-box__auto_generate" >
+                        {/* 
+                            auto generate functionality coming in v2.
+                            <div className="seedPopup-box__auto_generate" >
                             <h3>Auto Generate</h3>
                             <form method="POST" id="autogenerate_form" onSubmit={handleFormSubmit}>
                                 
@@ -259,7 +271,7 @@ const SeedPopup = ({ openSeedPopup, setOpenSeedPopup, user, model, refetchModel 
                                 
                                 <button type="submit">Seed Table</button>
                             </form>
-                        </div>
+                        </div> */}
                     </div>
                 </div>
 
