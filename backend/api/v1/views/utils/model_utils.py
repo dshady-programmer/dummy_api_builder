@@ -1,8 +1,7 @@
 from models import (
     db, TableParameter,
-    Api, Entry, Table,
     Constraint, Relationship, 
-    ForeignKeyFieldReferenceTable
+    UserLimit
 )
 from sqlalchemy.orm import selectinload
 from sqlalchemy import text
@@ -37,12 +36,15 @@ def table_parameter_constraints_checks(
         entry_present, param_default_value, 
         prev_constraints, update
     ):
+
     
     
     if "primary_key" in constraints:
         if entry_present:
-            if not update or (update and "primary_key" not in prev_constraints) :
-                print('update', prev_constraints)
+            if not update or (update and "primary_key" not in prev_constraints):
+                # Adding new pk field to a table with already existing data is prohibited
+                # Adding a new pk field while updating a table is prohibited.
+            
                 raise Exception({"error": "Can't add new primary key field to a table with already existing data."})
             
         constraints.add("unique") # add unique to constraint if it's a primary key.
@@ -53,8 +55,9 @@ def table_parameter_constraints_checks(
             raise Exception({"error": "primary key data type must be either text, string or integer"})
     else:
         if entry_present and update and "primary_key" in prev_constraints:
+            # An already existing pk with rows on a table can't be deleted.
             raise Exception({"error": "Can't remove an existing primary key field from a table with already existing data."})
-        table_param.primary_key = False
+        table_param.primary_key = False # if no existing rows are on the table, go ahead and remove the pk.
     
         
         if update and entry_present and "unique" in constraints and "unique" not in prev_constraints:
@@ -72,8 +75,8 @@ def table_parameter_constraints_checks(
             # since the existing entries won't have any value for the new field and that 
             # would violate the not null constraint. 
             #
-            # Also you can't add a unique constraint without a default value 
-            # or a nullable constraint since the existing entries won't have any value 
+            # Also you can't add a unique constraint field into a table with existing rows.
+            # or a nullable constraint field since the existing entries won't have any value 
             # for the new field and that would violate the unique constraint
             constraints.add("nullable")
         
@@ -149,6 +152,7 @@ def table_parameter_constraints_checks(
         
     if "foreign_key" not in constraints and table_param.foreign_key_reference_id is not None:
         table_param.foreign_key_reference_id = None
+        table_param.foreign_key_default_value = None
 
 
 
@@ -159,7 +163,7 @@ def table_parameter_constraints_checks(
 
 def check_and_validate_tableparameter(
         table, table_param, param, param_dt, param_dt_length, 
-        param_default_value, constraints, user, entry_present, update=False
+        param_default_value, constraints, user, entry_present, validated_fks, update=False
     ):
 
     primary_key_present = False
@@ -167,7 +171,7 @@ def check_and_validate_tableparameter(
     if param_default_value is not None:
         param_default_value = html_clean_value(param_default_value)
         if param_dt == "boolean":
-            param_default_value = param_default_value.capitalize() # ensure boolean values are capitalized for literal eval to work properly
+            param_default_value = param_default_value.capitalize() # ensure boolean values are capitalized 
     if update:
         prev_default_value = table_param.default_value
         prev_constraints = [c.name.value for c in table_param.constraints]
@@ -177,7 +181,7 @@ def check_and_validate_tableparameter(
         param_dt, param_dt_length,
         constraints, 
         entry_present, param_default_value, 
-        prev_constraints, update
+        prev_constraints, update, 
     )
            
         
@@ -190,7 +194,7 @@ def check_and_validate_tableparameter(
             # Check if the constraint is valid
             raise Exception({"error": "invalid constraint"})
         if const == "foreign_key":
-            parent_table = foreign_key_ref_table_validator(table_param, param_dt, param, user)
+            parent_table = foreign_key_ref_table_validator(table_param, param_dt, param, user, validated_fks, entry_present)
             foreign_key_on_delete_validator(table_param, param, constraints) # validate on delete options
             run_update = True
             is_default = "default" in constraints
@@ -212,7 +216,8 @@ def check_and_validate_tableparameter(
             validate_foreign_key_default_value(
                 parent_table, table, 
                 table_param, param_default_value, 
-                entry_present, run_update, update, is_default
+                entry_present, run_update, update, 
+                validated_fks, is_default
             )
 
         if const == "primary_key":
@@ -227,7 +232,7 @@ def check_and_validate_tableparameter(
             table_param.constraints.append(Constraint(name=const))
     return primary_key_present
 
-def create_table_parameter(param, table, tableparam_names, user, entry_present):
+def create_table_parameter(param, table, tableparam_names, user, entry_present, validated_fks):
     
     param_name = param.get("name")
     param_dt = param.get("datatype")
@@ -236,7 +241,7 @@ def create_table_parameter(param, table, tableparam_names, user, entry_present):
     constraints = param.get("constraints") or []
     if type(constraints) != list:
         raise Exception({"error": "Invalid constraints type"})
-    constraints = set(constraints) # incase of duplicate values.
+    constraints = set(constraints) # eliminate duplicate values.
 
     if not param_name:
         raise Exception({"error": "Table parameter name can't be empty"})
@@ -263,7 +268,7 @@ def create_table_parameter(param, table, tableparam_names, user, entry_present):
         raise Exception({"error": "invalid name(must be a valid python identifier) and not a python keyword"})
     try:
         if param_dt_length and param_dt in ["string", "text"]: # if maximum length is set for the model field
-            # Ths would later be extended to data types like integer and decimals.
+            # would later be extended to data types like integer and decimals.
             param_dt_length = abs(int(param_dt_length))
         else:
             param_dt_length = None
@@ -282,11 +287,12 @@ def create_table_parameter(param, table, tableparam_names, user, entry_present):
                 param_dt_length,
                 param_default_value, constraints, 
                 user, 
-                entry_present
+                entry_present,
+                validated_fks
             )
 
 
-def update_table_parameter(param,table, tableparam, tableparam_names, user, entry_present):
+def update_table_parameter(param,table, tableparam, tableparam_names, user, entry_present, validated_fks):
     param_name = param.get("name")
     param_dt = param.get("datatype")
     param_dt_length = param.get("dt_length")
@@ -343,7 +349,7 @@ def update_table_parameter(param,table, tableparam, tableparam_names, user, entr
             param_dt_length, 
             param_default_value, constraints, 
             user, 
-            entry_present, True
+            entry_present, validated_fks, True
         )
 
 
@@ -363,9 +369,10 @@ def parse_and_create_tableparameters(table_parameters, new_table, user):
     primary_key_present = False
 
     tableparam_names = set()
+    validated_fks = {"key_refs": {}, "default_value_refs": {}}
     try:
         for param in table_parameters:
-           is_primary_key = create_table_parameter(param, new_table, tableparam_names, user, False)
+           is_primary_key = create_table_parameter(param, new_table, tableparam_names, user, False, validated_fks)
            if not primary_key_present:
                primary_key_present = is_primary_key
         if not primary_key_present:
@@ -381,8 +388,10 @@ def parse_and_create_tableparameters(table_parameters, new_table, user):
         return {"error": "Something went wrong"}
     
     else:
-        key = f"{api_cache_namespace(user.id, new_table.api_id)}:detail"
-        delete_cache(key)
+        # key = f"{api_cache_namespace(user.id, new_table.api_id)}:detail"
+        # delete_cache(key)
+        stmt = db.update(UserLimit).where(UserLimit.user_id==user.id).values(current_tables=UserLimit.current_tables + 1)
+        db.session.execute(stmt)
         db.session.commit()
         return {"id": new_table.id, "name": new_table.name, "desc": new_table.description}
 
@@ -395,6 +404,7 @@ def parse_and_update_tableparameters(table_parameters, table, user, entry_presen
     tableparam_names = set()
     existing_table_parameter_mapper = {}
 
+    validated_fks = {"key_refs": {}, "default_value_refs": {}}
 
 
     existing_primary_keys = set()
@@ -411,13 +421,13 @@ def parse_and_update_tableparameters(table_parameters, table, user, entry_presen
         for param in table_parameters:
             param_id = param.get("index")
             if param_id in existing_table_parameter_mapper:
-                is_primary_key = update_table_parameter(param, table, existing_table_parameter_mapper[param_id], tableparam_names, user, entry_present)
+                is_primary_key = update_table_parameter(param, table, existing_table_parameter_mapper[param_id], tableparam_names, user, entry_present, validated_fks)
                 if is_primary_key:
                     updated_primary_keys.add(existing_table_parameter_mapper[param_id])
                 existing_table_parameter_mapper.pop(param_id)
             else:
 
-                is_primary_key = create_table_parameter(param, table, tableparam_names, user, entry_present)
+                is_primary_key = create_table_parameter(param, table, tableparam_names, user, entry_present, validated_fks)
                 # if is_primary_key and entry_present are true validation error is raised before getting to this point.
             if not primary_key_present:
                 primary_key_present = is_primary_key

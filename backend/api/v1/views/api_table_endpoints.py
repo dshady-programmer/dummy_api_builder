@@ -7,7 +7,8 @@ from api.v1.views import app_views
 from flask import request
 from .utils.response import format_response
 from api.v1.auth.auth import login_required
-from models import db, Api, Table, TableParameter, Entry, EntryList, Relationship
+from models import db, Api, Table, TableParameter, Entry, EntryList, Relationship, UserLimit
+from models.user import MAX_TABLE_FOR_USER
 from .utils.validate import validate_name
 from .utils.model_utils import (
     parse_and_create_tableparameters, 
@@ -37,6 +38,12 @@ def create_model(user, api_id):
     description = data.get('description')
     table_parameters = data.get('tbl_params') or []
 
+
+    # Check if user is allowed to create more tables.
+    tables_count = db.session.scalar(db.select(UserLimit.current_tables).where(UserLimit.user_id==user.id))
+    if tables_count > MAX_TABLE_FOR_USER:
+        return format_response(status="error", message="Maximum number of allowable tables reached. Delete existing tables to create a new one", code=403)
+
     # Atleast one table parameter is required
     # Tableparameter refers to the model fields (like name = string() etc..)
     # table_parameters would contain a list of dictionaries defining the attribute for the model
@@ -63,7 +70,6 @@ def create_model(user, api_id):
         response = parse_and_create_tableparameters(table_parameters, new_table, user)
         if 'error' in response:
             return format_response(status="error", message=response['error'], code=400)
-
 
         return format_response(data=response, code=201)
     except Exception as e:
@@ -156,24 +162,38 @@ def show_model(user, api_id, model_id):
         return format_response(status="error", message="no api of such is associated with the user", code=404) 
     table_stmt = db.select(Table).filter_by(id=model_id, api_id=api_id)\
                                             .options(selectinload(Table.table_parameters)\
-                                            .selectinload(TableParameter.constraints))
+                                            .selectinload(TableParameter.constraints)\
+                                            .joinedload(TableParameter.foreign_key_default_value))
     table = db.session.scalar(table_stmt)
     if not table:
         return format_response(status="error", message="Table doesn't exist", code=404) 
     tbl_params = []
+    updated = False
     
     for param in table.table_parameters:
         tbl_constraints = [const.name.value for const in param.constraints]
         foreign_key_ref = None
         ref_table = param.foreign_key_reference_table
+        param_default_value = param.default_value
+
         if ref_table:
             foreign_key_ref = f"{ref_table.table_reference.api.name}.{ref_table.table_reference.name}"
+            if param.foreign_key_default_value and param_default_value != param.foreign_key_default_value.primary_key_value:
+                param_default_value = param.foreign_key_default_value.primary_key_value
+                updated=True
+            elif not param.foreign_key_default_value:
+                param_default_value = None
+                updated=True 
+            
+            
+
+
         tbl_params.append({
             "index": param.id,
             "name": param.name,
             "datatype": param.data_type.name,
             "dt_length": param.dataType_length,
-            "default_value": param.default_value, 
+            "default_value": param_default_value, 
             "foreign_key_rf": foreign_key_ref,
             "constraints": tbl_constraints
         })
@@ -190,6 +210,8 @@ def show_model(user, api_id, model_id):
         "desc": table.description,
         "table_params": tbl_params
         }
+    if updated:
+        db.session.commit()
     # set_cache(no_of_entries_key, num_of_entries)
     # set_cache(key, data)
     return format_response(data=data)
@@ -220,6 +242,8 @@ def delete_model(user, api_id, model_id):
     # num_entries = f"{api_cache_namespace(user.id, api_id)}:model:{t.id}:num_of_entries"
     # api_cache_key = f"{api_cache_namespace(user.id, api_id)}:detail"
     # multiple_key_delete([table_cache_key, num_entries, api_cache_key])
+
+
    
     return format_response(code=code)
 

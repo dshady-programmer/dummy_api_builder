@@ -53,6 +53,6 @@ class Relationship(db.Model):
     child_table_id = db.Column(db.Integer, db.ForeignKey('table.id', ondelete='CASCADE')) # child table reference for the foreign key relationship
 
     __table_args__ = (
-        db.UniqueConstraint('entry_ref_pk', 'foreign_key_rel_id', name='uq_relationship_entry_ref_pk_foreign_key_rel_id'),
+        db.UniqueConstraint('entry_ref_pk', 'foreign_key_rel_id', 'child_table_id', name='uq_relationship_entry_ref_pk_foreign_key_rel_id'),
         {'sqlite_autoincrement': True}
     )

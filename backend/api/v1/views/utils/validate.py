@@ -11,7 +11,7 @@ from models import (
 )
 from dateutil.parser import parse
 import datetime
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, joinedload
 import keyword
 import uuid
 import secrets
@@ -127,7 +127,7 @@ def validate_entry_value_length(value, type, length):
     return True
 
 
-def validate_entry_constraints(value, tbl_p, tracked_pks, tracked_unique_values):
+def validate_entry_constraints(value, tbl_p, tracked_pks, tracked_unique_values, tracked_fk_values):
     fk = None
     default_value = None
     consts = [const.name.value for const in tbl_p.constraints]
@@ -139,11 +139,14 @@ def validate_entry_constraints(value, tbl_p, tracked_pks, tracked_unique_values)
                 if tbl_p.primary_key:
                     # auto generate keys for primary keys
                     default_value = autogenerate_keys(tbl_p, tracked_pks)
-                    return True, c, None, default_value
                 elif "foreign_key" in consts:
-                    value = tbl_p.default_value # we need to ensure the default value exist.
+                    # value = tbl_p.default_value # we need to ensure the default value exist.
+                    val = tbl_p.foreign_key_default_value.primary_key_value
                     fk = "default_fk"
-                    default_value = str(value)
+                    if val:
+                        default_value = str(val)
+                    else:
+                        default_value = val
                     break
                 elif tbl_p.data_type.name in ['date', 'datetime']:
 
@@ -154,31 +157,48 @@ def validate_entry_constraints(value, tbl_p, tracked_pks, tracked_unique_values)
 
                 else:
                     default_value = str(tbl_p.default_value)
-            if condition:
+
+                return True, c, None, default_value
+            elif condition and c == "nullable":
                 return True, c, None, default_value
         
-    if condition:
+    if condition and not default_value:
         return False, "non-nullable", "Value can't be empty", default_value
 
     value = str(value)
     if "foreign_key" in consts:
+        value = default_value
 
         if not fk:
             fk = "fk"
+
+        if value in tracked_fk_values["values"]:
+            return True, fk, None, default_value
+        
         get_ref_table = tbl_p.foreign_key_reference_table
       
         if not get_ref_table:
-            return False, fk, "Reference table doesn't exist", default_value
-        
-        e_li = db.session.scalar(
-                db.select(EntryList).filter_by(table_id=get_ref_table.table_id, primary_key_value = value)
-            )
+            return False, fk, "No Reference table", default_value
+        if fk == "fk":
+            # validate input field
+            e_li = db.session.scalar(
+                    db.select(EntryList).filter_by(table_id=get_ref_table.table_id, primary_key_value = value)
+                )
+        else:
+            # default fk would be valid as far as there's a value
+            if not default_value:
+                return False, fk, "Foreign key default value is empty.", default_value
+                # raise({"error": "Foreign key default value is empty."})
+            e_li = tbl_p.foreign_key_default_value
         if not e_li:
             return False, fk, f"Primary key '{value}' referenced for the foreign key doesn't exist on the parent table", default_value
+
+        tracked_fk_values["values"][value] = e_li
     if "unique" in consts:
-        tracked_uniq = tracked_unique_values[tbl_p.id] if tbl_p.id in tracked_unique_values else []
-        if value in tracked_uniq or db.session.scalar(db.select(Entry).filter_by(tableparameter_id=tbl_p.id, value=value)):
-            return False, "uniq", f"{value} already exists in the database. It must be unique", default_value
+        if not tbl_p.primary_key:
+            tracked_uniq = tracked_unique_values[tbl_p.id] if tbl_p.id in tracked_unique_values else []
+            if value in tracked_uniq or db.session.scalar(db.select(Entry).filter_by(tableparameter_id=tbl_p.id, value=value)):
+                return False, "uniq", f"{value} already exists in the database. It must be unique", default_value
     return True, fk, None, default_value
 
 
@@ -220,44 +240,57 @@ def foreign_key_constraints_validator(parent_table, table_param, nullable=False)
 
     """
 
-    entry_stmt = db.select(Entry).filter_by(tableparameter_id=table_param.id)
+    entry_stmt = db.select(Entry).filter_by(tableparameter_id=table_param.id).options(joinedload(Entry.entry_list))
     entries = db.session.scalars(entry_stmt).all()
-    validated_keys = set()
+    validated_keys = {}
     # db.session.scalar(db.select(EntryList).filter_by(table_id=parent_table.id, primary_key_value=entry.value))
     e_lists = db.session.scalars(db.select(EntryList).filter_by(table_id=parent_table.id)).all() # grab all the entries on the parent table 
-    e_list_pks = {e_list.primary_key_value: e_list for e_list in e_lists}
+    e_list_pks = set([e_list.primary_key_value for e_list in e_lists])
 
     for entry in entries:
-
+        # first check the entries are valid primary key values on the parent table
         condition = (entry.value and entry.value not in validated_keys)
         if condition:
 
             if entry.value not in e_list_pks:
                 raise Exception({"error": "Failed foreign key constraints, one or more rows does not reference a valid pk value on the parent table "})
-            try:
-                e_list = e_list_pks[entry.value]
-                rel_stmt = db.select(Relationship)\
-                    .filter_by(foreign_key_rel_id = parent_table.reference.id, entry_ref_pk = entry.value, child_table_id=table_param.table_id)\
-                    .options(selectinload(Relationship.entrylists))
-                relationship = db.session.scalar(rel_stmt)
-                # relationship = Relationship.query.filter_by(foreign_key_rel_id = parent_table.reference.id, entry_ref_pk = entry.value, child_table_id=table_param.table_id).first() 
-                if not relationship:
-                    relationship = Relationship(entry_ref_pk=entry.value, foreign_key_rel_id=parent_table.reference.id, child_table_id=table_param.table_id)
-                if e_list not in relationship.entrylists:
-                    relationship.entrylists.append(e_list)
-                    db.session.add(relationship)
-            except:
-                raise Exception({"error": "Could not reference the foreign key id while getting/creating relationship"})
-
         elif nullable and not entry.value:
             continue
         elif not nullable and not entry.value:
             raise Exception({"error": "Found null values for a non-nullable column"})
-        
-        validated_keys.add(entry.value)
+
+        if validated_keys.get(entry.value):
+            validated_keys[entry.value].append(entry.entry_list)
+        else:
+            validated_keys[entry.value] = [entry.entry_list]
+
+    try:
+
+        # Create a relationship and add the entrylist to the relationship
+        # e_list = e_list_pks[entry.value]
+        rels_stmt = db.select(Relationship)\
+            .where(Relationship.foreign_key_rel_id == parent_table.reference.id, Relationship.entry_ref_pk.in_(validated_keys), Relationship.child_table_id == table_param.table_id)\
+            .options(selectinload(Relationship.entrylists))
+        relationships = db.session.scalars(rels_stmt).all()
+        for relationship in relationships:
+            e_lists = validated_keys[relationship.entry_ref_pk]
+            for e_list in e_lists:
+                if e_list not in relationship.entrylists:
+                    relationship.entrylists.append(e_list)
+            validated_keys.pop(relationship.entry_ref_pk)
+
+        for entry_value in validated_keys:
+            e_lists = validated_keys[entry_value]
+            for e_list in e_lists:
+                n_relationship = Relationship(entry_ref_pk=entry_value, foreign_key_rel_id=parent_table.reference.id, child_table_id=table_param.table_id)
+                n_relationship.entrylists.append(e_list)
+                db.session.add(n_relationship)
+    except:
+        raise Exception({"error": "Could not reference the foreign key id while getting/creating relationship"})
+
         
 
-def foreign_key_ref_table_validator(table_param, param_dt, param, user):
+def foreign_key_ref_table_validator(table_param, param_dt, param, user, validated_fks, entry_present):
     
 
     if not validate_foreign_key_dType(param_dt): # since foreign key would always reference a primary key from the parent table.. it should conform with the valid pk data types(excluding integers)
@@ -267,18 +300,36 @@ def foreign_key_ref_table_validator(table_param, param_dt, param, user):
         raise Exception({"error": "Foreign key data type must be either text or string"})
     table_param.dataType_length = None # no restriction to the maximum length to avoid any complications
     fk_rf = param.get("foreign_key_rf") #expected format(api.table)
-    if not fk_rf:
-        raise Exception({"error": "Expected a foreign key reference field."})
-    f_api, f_table = fk_rf.split(".", 1) # Check if the reference api and model are valid for it to be a foreign key field
-    r_api = db.session.scalar(db.select(Api).filter_by(name=f_api, user_id=user.id))
-    if not r_api:
-        raise Exception({"error": "Api name referenced in the foreign key doesn't exist"})
-    r_table = db.session.scalar(db.select(Table).filter_by(name=f_table, api_id=r_api.id))
-    if not r_table:
-        raise Exception({"error": "Table name referenced doesn't exist"})
-    foreign_key_ref_table = db.session.scalar(db.select(ForeignKeyFieldReferenceTable).filter_by(table_id=r_table.id))
-    table_param.foreign_key_reference_id = foreign_key_ref_table.id
+
+
+
+    vfk = validated_fks["key_refs"].get(fk_ref, None) # check already validated foreign keys before blindly proceeding.
+
+    if not vfk:
+        if not fk_rf:
+            raise Exception({"error": "Expected a foreign key reference field."})
+        f_api, f_table = fk_rf.split(".", 1) # Check if the reference api and model are valid for it to be a foreign key field
+        r_api = db.session.scalar(db.select(Api).filter_by(name=f_api, user_id=user.id))
+        if not r_api:
+            raise Exception({"error": "Api name referenced in the foreign key doesn't exist"})
+        r_table = db.session.scalar(db.select(Table).filter_by(name=f_table, api_id=r_api.id))
+        if not r_table:
+            raise Exception({"error": "Table name referenced doesn't exist"})
+        foreign_key_ref_table = db.session.scalar(db.select(ForeignKeyFieldReferenceTable).filter_by(table_id=r_table.id))
+
+        fk_ref_id = foreign_key_ref_table.id
+
+        if entry_present:
+            # This is an update, check the previous foreign key ref id is the same as the current one
+            # else raise an error
+            if table_param.foreign_key_reference_id != fk_ref_id:
+                raise Exception({"error": "Foreign key reference id can't be changed once there's data on the table."})
+        validated_fks["key_refs"][fk_ref] = foreign_key_ref_table
+    else:
+        fk_ref_id = vfk.id
+    table_param.foreign_key_reference_id = fk_ref_id
     return r_table
+
 
 
 def foreign_key_on_delete_validator(table_param, param, constraints):
@@ -307,7 +358,8 @@ def foreign_key_on_delete_validator(table_param, param, constraints):
 def validate_foreign_key_default_value(
         parent_table, table, table_param, 
         default_value, entry_present, 
-        run_update, update, is_default=False
+        run_update, update, validated_fks,
+        is_default=False
     ):
     from .model_entry_utils import (
         create_default_value_entries, 
@@ -329,10 +381,16 @@ def validate_foreign_key_default_value(
     if not is_default:
         return
 
-    e_list = db.session.scalar(db.select(EntryList).filter_by(table_id=parent_table.id, primary_key_value=default_value))
+    key = f"{parent_table.id}-{default_value}"
+    if not validated_fks["default_value_refs"].get(key):
+        e_list = db.session.scalar(db.select(EntryList).filter_by(table_id=parent_table.id, primary_key_value=default_value))
+        validated_fks["default_value_refs"][key] = e_list 
+    else:
+        e_list = validated_fks["default_value_refs"][key]
     if not e_list:
         raise Exception({"error": "FK default value does not reference a valid primary key value on the parent table"})
     table_param.default_value = default_value
+    table_param.foreign_key_default_value_id = e_list.id
     if entry_present:
         if not update:
             create_default_value_entries(table, table_param, default_value, True)

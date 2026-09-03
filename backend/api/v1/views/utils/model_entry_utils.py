@@ -11,7 +11,7 @@ import datetime
 
 
 
-def validate_create_fk_relationships(tbl_p, entry_value, e_list, stat, err_msg):
+def validate_create_fk_relationships(tbl_p, entry_value, tracked_fk_values, e_list, stat, err_msg):
 
     rel_id = tbl_p.foreign_key_reference_id
     child_table_id = tbl_p.table_id
@@ -20,14 +20,19 @@ def validate_create_fk_relationships(tbl_p, entry_value, e_list, stat, err_msg):
     else:
         # if everything goes fine.. add the entrylist to a relationship using the foreign key primary key (if not already existing create new one) 
         try:
-            relationship = db.session.scalar(
-                db.select(Relationship).filter_by(foreign_key_rel_id = rel_id, entry_ref_pk = entry_value, child_table_id=child_table_id)
-            )
-            if not relationship:
-                relationship = Relationship(entry_ref_pk=entry_value, foreign_key_rel_id=rel_id, child_table_id=child_table_id)
-                db.session.add(relationship)
-                # parent_table = tbl_p.foreign_key_reference_table.table_reference
-                # invalidate_user_cache_api(None, parent_table.api_id, parent_table.name , []) # invalidate the parent table cache for new relationships.. (old relationships would already be tracked)
+            rel_key = f"{rel_id}-{entry_value}"
+            if rel_key in tracked_fk_values["relationships"]:
+                relationship = tracked_fk_values["relationship"][rel_key]
+            else:
+                relationship = db.session.scalar(
+                    db.select(Relationship).filter_by(foreign_key_rel_id = rel_id, entry_ref_pk = entry_value, child_table_id=child_table_id)
+                )
+                if not relationship:
+                    relationship = Relationship(entry_ref_pk=entry_value, foreign_key_rel_id=rel_id, child_table_id=child_table_id)
+                    db.session.add(relationship)
+                    # parent_table = tbl_p.foreign_key_reference_table.table_reference
+                    # invalidate_user_cache_api(None, parent_table.api_id, parent_table.name , []) # invalidate the parent table cache for new relationships.. (old relationships would already be tracked)
+                tracked_fk_values["relationship"][rel_key] = relationship
             relationship.entrylists.append(e_list)
             return relationship
         except:
@@ -35,7 +40,14 @@ def validate_create_fk_relationships(tbl_p, entry_value, e_list, stat, err_msg):
 
 
 
-def validate_create_update_entry_items(entry, parameters, e_list, table, primary_key_fields, tracked_pks=set(), tracked_unique_values={}, update=False):
+def validate_create_update_entry_items(
+        entry, parameters, e_list, table, 
+        primary_key_fields, tracked_pks=set(), 
+        tracked_unique_values={}, 
+        tracked_fk_values={"relationships": {}, "values": {}}, 
+        update=False
+    ):
+    
     primary_keys = []
     tracked_changes = []
     pending_unique_changes = {}
@@ -48,7 +60,7 @@ def validate_create_update_entry_items(entry, parameters, e_list, table, primary
         tbl_p = parameters[entry_name]
         if type(entry_value) == str:
             entry_value = entry_value.strip()
-        stat, const_type, err_msg, default_return_value = validate_entry_constraints(entry_value, tbl_p, tracked_pks, tracked_unique_values) # Validating the entry against the existing constraint
+        stat, const_type, err_msg, default_return_value = validate_entry_constraints(entry_value, tbl_p, tracked_pks, tracked_unique_values, tracked_fk_values) # Validating the entry against the existing constraint
         if const_type == "default" and stat:
             entry_value = default_return_value # set default value
         elif const_type == "nullable" and stat:
@@ -66,7 +78,7 @@ def validate_create_update_entry_items(entry, parameters, e_list, table, primary
         if const_type == "fk" or const_type == "default_fk":
             if const_type == "default_fk":
                 entry_value = default_return_value
-            rel = validate_create_fk_relationships(tbl_p, entry_value, e_list, stat, err_msg)
+            rel = validate_create_fk_relationships(tbl_p, entry_value, tracked_fk_values, e_list, stat, err_msg)
             tracked_changes.append(rel)
         else:
             if not stat and const_type == "uniq":
@@ -82,7 +94,7 @@ def validate_create_update_entry_items(entry, parameters, e_list, table, primary
         entry_value = html_clean_value(entry_value) if entry_value is not None else entry_value # clean html value to avoid xss attacks with the exception of None values which is acceptable
         if tbl_p.primary_key:
             if entry_value is None:
-                # Not technically going to reach this point just an extra / redundant safeguard incase of shortcomings
+                # Not technically going to reach this point just an extra / redundant safeguard
                 raise Exception({"error": "Primary key value can't be null"})
             primary_keys.append({"id": tbl_p.id, "value": entry_value})
         if tbl_p.data_type.name == "datetime" or tbl_p.data_type.name == "date":
@@ -101,7 +113,10 @@ def validate_create_update_entry_items(entry, parameters, e_list, table, primary
         if not e:
             e = Entry(value=entry_value, tableparameter_id=tbl_p.id)
             e_list.entries.append(e)
-        
+
+        if entry_value in tracked_fk_values['values']:
+            e.fk_entry_list_id = tracked_fk_values['values'][entry_value].id
+
         parameters.pop(entry_name) # remove already processed entry_name
 
         validated_entry_state[entry_name] = entry_value
@@ -116,7 +131,7 @@ def validate_create_update_entry_items(entry, parameters, e_list, table, primary
 
         if primary_key_fields != primary_key_ids:
             raise Exception({"error": "Primary key field provided doesn't match with your table primary keys"})
-        primary_key_value = "".join([ str(key["value"]) for key in primary_keys_sorted])
+        primary_key_value = "-".join([ str(key["value"]) for key in primary_keys_sorted]) # for composite keys join the multiple keys with "-"
         # check if primary key already exists
         
         if primary_key_value in tracked_pks or db.session.scalar(
@@ -127,20 +142,16 @@ def validate_create_update_entry_items(entry, parameters, e_list, table, primary
         # Check if this primary key is already associated with a relationship
        
         if update:
-            relationships = db.session.scalar(
-                db.select(Relationship).filter_by(entry_ref_pk=e_list.primary_key_value, foreign_key_rel_id=table.reference.id).options(
-                    selectinload(Relationship.entrylists
-                ))
-            )
-            for relationship in relationships:
-                if relationship:
-                    # incase of update entries with active references can't be updated..
-                    # can be updated without active references
-                    if len(relationship.entrylists):
-                        raise Exception({"error": "Primary key value is being used by other child table"})
 
-                    # invalidate_user_cache_api(None, relationship.child_table.api.id, relationship.child_table.name, []) # invalidate any cache associated with the child table
-                    # db.session.delete(relationship)
+            is_referenced = db.session.scalar(
+                db.exists().where(Entry.fk_entry_list_id == e_list.id)
+            )
+            # Don't update primary key values that has other entries depending on it via foreign key
+            if is_referenced:          
+                raise Exception({"error": "Primary key value is being used by other child table"})
+
+                # invalidate_user_cache_api(None, relationship.child_table.api.id, relationship.child_table.name, []) # invalidate any cache associated with the child table
+                # db.session.delete(relationship)
                 
         e_list.primary_key_value = primary_key_value
         return tracked_changes, pending_unique_changes, validated_entry_state
@@ -151,6 +162,7 @@ def validate_create_update_entry_items(entry, parameters, e_list, table, primary
 
 def create_entry(table, entry, tracked_pks, 
                  tracked_unique_values, 
+                 tracked_fk_values,
                  cached_required_parameters, 
                  cached_parameters, 
                  cached_primary_key_fields,
@@ -226,17 +238,17 @@ def create_entry(table, entry, tracked_pks,
 
 
         
-        t_changes, pending_unique_changes, v_entry_state = validate_create_update_entry_items(entry, parameters, e_list, table, primary_key_fields, tracked_pks, tracked_unique_values)
+        t_changes, pending_unique_changes, v_entry_state = validate_create_update_entry_items(entry, parameters, e_list, table, primary_key_fields, tracked_pks, tracked_unique_values, tracked_fk_values)
         tracked_changes.extend(t_changes)
         # after all the required parameters have been sorted
         # iterate over the remaining parameters and create an entry for them with null values and also ensure they do have nullable constraints on their respective fields (thus validating that non-nullable fields are indeed passed)
         for tb_param_name, tb_param  in parameters.items():
             tbl_constraints = [c.name.value for c in tb_param.constraints]
             if "nullable" in tbl_constraints or "default" in tbl_constraints:
-                stat, const_type, err_msg, default_return_value = validate_entry_constraints(None, tb_param, tracked_pks, tracked_unique_values)
+                stat, const_type, err_msg, default_return_value = validate_entry_constraints(None, tb_param, tracked_pks, tracked_unique_values, tracked_fk_values)
                 if "default" in tbl_constraints:
                     if const_type == "default_fk":
-                        rel = validate_create_fk_relationships(tb_param, default_return_value, e_list, stat, err_msg)
+                        rel = validate_create_fk_relationships(tb_param, default_return_value, tracked_fk_values, e_list, stat, err_msg)
                         tracked_changes.append(rel)
                     e = Entry(tableparameter_id=tb_param.id, value=default_return_value)
                     e_value = default_return_value
@@ -587,23 +599,6 @@ def update_default_value_entries(table_param, default_value, is_fk=False):
                     db.session.add(relationship)
 
 
-# def update_default_value_entries(table_param, default_value, is_fk=False):
-#     #update the values that are null.. doesn't change previous values.
-#     entries = table_param.entries
-#     for entry in entries:
-#         if not entry.value:
-#             entry.value = default_value
-#             if is_fk:   
-#                 try:
-#                     rel_id = table_param.foreign_key_reference_table.table_reference.table_id
-#                     relationship = Relationship.query.filter_by(foreign_key_rel_id = rel_id, entry_ref_pk = default_value, child_table_id=table_param.table_id).first() 
-#                     if not relationship:
-#                         relationship = Relationship(entry_ref_pk=default_value, foreign_key_rel_id=rel_id, child_table_id=table_param.table_id)
-#                     if entrylist not in relationship.entrylists:
-#                         relationship.entrylists.append(entrylist)
-#                         db.session.add(relationship)
-#                 except:
-#                     raise Exception({"error": "Could not reference the foreign key id while getting/creating relationship"})
 
 
 

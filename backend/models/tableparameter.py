@@ -92,12 +92,14 @@ class TableParameter(db.Model):
     name = db.Column(db.String, nullable=False)
     data_type = db.Column(db.Enum(DataTypes), default=DataTypes.string, nullable=False)
     primary_key = db.Column(db.Boolean, default=False) 
-    foreign_key_reference_id = db.Column(db.Integer, db.ForeignKey('foreignkeyfieldreferencetable.id', ondelete='CASCADE'), nullable=True) 
+    foreign_key_reference_id = db.Column(db.Integer, db.ForeignKey('foreignkeyfieldreferencetable.id', ondelete='CASCADE'), nullable=True, index=True) 
     dataType_length = db.Column(db.Integer, nullable=True) # Only valid for strings, text, integers
     default_value = db.Column(db.Text, nullable=True) # for default values
 
-    # foreign_key_default_value = db.Column(db.Integer, db.ForeignKey('entrylist.id', ondelete='SET NULL'), nullable=True) # if field has a foreign key constraint and default value
-    table_id = db.Column(db.Integer, db.ForeignKey('table.id', ondelete='CASCADE'))
+    foreign_key_default_value_id = db.Column(db.Integer, db.ForeignKey('entrylist.id', ondelete='SET NULL'), nullable=True) # if field has a foreign key constraint and default value
+    foreign_key_default_value = db.relationship('Entrylist', back_populates="table_param_defaults")
+
+    table_id = db.Column(db.Integer, db.ForeignKey('table.id', ondelete='CASCADE'), index=True)
     table = db.relationship('Table', back_populates='table_parameters')
     constraints = db.relationship('Constraint', secondary=parameter_constraints, backref='table_parameters')
     entries = db.relationship('Entry', back_populates='tableparameter', cascade="all, delete-orphan", passive_deletes=True)

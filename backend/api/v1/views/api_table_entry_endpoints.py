@@ -53,7 +53,8 @@ def add_list_entry(api_token, api_name, model_name):
         return format_response(status="error", message=f"{api_name} does not exists in the users catalog", code =400)
     table_stmt_post = db.select(Table).filter_by(name=model_name, api_id=api.id)\
         .options(selectinload(Table.table_parameters).selectinload(TableParameter.constraints),
-                 selectinload(Table.table_parameters).joinedload(TableParameter.foreign_key_reference_table))\
+                 selectinload(Table.table_parameters).joinedload(TableParameter.foreign_key_reference_table)\
+                                                    .joinedload(TableParameter.foreign_key_default_value))\
         .with_for_update()
 
     table_stmt_get = db.select(Table).filter_by(name=model_name, api_id=api.id)\
@@ -90,7 +91,8 @@ def add_list_entry(api_token, api_name, model_name):
             data = request.get_json()
             entries = data.get("entries")
         
-        if type(entries) not in [list, dict]: 
+        if type(entries) not in [list, dict]:
+            db.session.rollback() 
             return format_response(status="error", message="Entries must be an object or an array of objects", code=400)
         # no_of_entries_key = f"{user.id}:{api.id}:{model_name}:num_of_entries"
         # executor_thread = init_executor()
@@ -98,6 +100,7 @@ def add_list_entry(api_token, api_name, model_name):
 
         tracked_pks = set()
         tracked_unique_values = {}
+        tracked_fk_values = {"relationships": {}, "values": {}}
 
         cached_required_parameters = []
         cached_parameters = {}
@@ -107,7 +110,8 @@ def add_list_entry(api_token, api_name, model_name):
             response = create_entry(
                         table, entries, 
                         tracked_pks, 
-                        tracked_unique_values, 
+                        tracked_unique_values,
+                        tracked_fk_values, 
                         [], {}, set(), {}
                     )
             
@@ -127,12 +131,12 @@ def add_list_entry(api_token, api_name, model_name):
             for entry in entries:
                 response = create_entry(
                     table, entry, tracked_pks, tracked_unique_values,
+                    tracked_fk_values,
                     cached_required_parameters, cached_parameters,
                     cached_primary_key_fields, cached_default_pk_fields
                 )
 
                 if 'error' in response:
-                    num_of_responses = len(responses)
                     stringified_key_entry = {str(k): v for k, v in entry.items()}
                     error_detail = {
                                 "entry": stringified_key_entry,
@@ -150,6 +154,8 @@ def add_list_entry(api_token, api_name, model_name):
             # if row is not None:
             #     set_cache(no_of_entries_key, row.current_rows) 
             try:
+                successful_entries = num_of_responses - num_of_errors
+                user_limit.current_rows += successful_entries
                 db.session.commit()
             except Exception as e:
                 db.session.rollback()

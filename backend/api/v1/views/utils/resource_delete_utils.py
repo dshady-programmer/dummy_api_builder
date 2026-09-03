@@ -1,5 +1,5 @@
 
-from models import TableParameter, Relationship, Entry, EntryList,Table, entrylist_relationships
+from models import TableParameter, Relationship, Entry, EntryList,Table, UserLimit, entrylist_relationships
 from sqlalchemy.orm import selectinload, joinedload
 """
     Utility functions for handling foreign key on delete operations in the API.
@@ -29,7 +29,7 @@ def traverse_table_reference_child_tables(child_table_params, table_ids = None):
     if not child_table_params:
         return True # can delete.
     
-    print('got here', child_table_params, table_ids)
+    # print('got here', child_table_params, table_ids)
 
     for c_table_param in child_table_params:
         # check each child table param for their on_delete config table param 
@@ -194,6 +194,8 @@ def delete_table(db, table):
         if can_delete:
             try:
                 db.session.delete(table)
+                stmt = db.update(UserLimit).where(UserLimit.user_id==user.id).values(current_tables=UserLimit.current_tables - 1)
+                db.session.execute(stmt)
                 db.session.commit()
                 return True, None, 204
 

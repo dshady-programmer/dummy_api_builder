@@ -39,9 +39,10 @@ class EntryList(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     primary_key_value = db.Column(db.Text)
     entries = db.relationship('Entry', back_populates='entry_list', cascade="all, delete-orphan", passive_deletes=True)
-    table_id = db.Column(db.Integer, db.ForeignKey('table.id', ondelete='CASCADE')) 
+    table_id = db.Column(db.Integer, db.ForeignKey('table.id', ondelete='CASCADE'), index=True) 
     table = db.relationship('Table', back_populates='entry_lists')
 
+    table_param_defaults = db.relationship('TableParameter', back_populates="foreign_key_default_value", passive_delete=True)
     
     __table_args__ = (
         db.UniqueConstraint('table_id', 'primary_key_value', name='uq_entrylist_table_id_primary_key_value'),
