@@ -54,5 +54,6 @@ class Relationship(db.Model):
 
     __table_args__ = (
         db.UniqueConstraint('entry_ref_pk', 'foreign_key_rel_id', 'child_table_id', name='uq_relationship_entry_ref_pk_foreign_key_rel_id'),
+        db.Index("idx_entry_ref_pk_foreign_key_rel_id", "entry_ref_pk", "foreign_key_rel_id"),
         {'sqlite_autoincrement': True}
     )

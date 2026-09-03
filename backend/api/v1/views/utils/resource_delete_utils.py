@@ -51,7 +51,7 @@ def traverse_table_reference_child_tables(child_table_params, table_ids = None):
 
 
 
-def traverse_table_ref_entrylist_child_tables(db, fk_ref_table_id, pks, child_table_params, recursive_depth=1):
+def traverse_table_ref_entrylist_child_tables(db, fk_ref_table_id, pks, child_table_params, recursive_depth=1, visited_ref_ids=set()):
 
     print("recursive depth", recursive_depth)
     if recursive_depth > 5:
@@ -98,7 +98,11 @@ def traverse_table_ref_entrylist_child_tables(db, fk_ref_table_id, pks, child_ta
     # recursive call.
     
     if cascade_child_table_ids:
-        # grab all the entrylist of that's referencing the pk
+
+        if fk_ref_table_id in visited_ref_ids:
+            raise Exception({'error': 'Foreign key circular dependency error'})
+        visited_ref_ids.add(fk_ref_table_id)
+        # grab all the entrylist that's referencing the pk
         cascade_rels_stmt = db.select(Relationship).where(
                                         Relationship.entry_ref_pk.in_(pks),
                                         Relationship.foreign_key_rel_id==fk_ref_table_id,
@@ -108,10 +112,10 @@ def traverse_table_ref_entrylist_child_tables(db, fk_ref_table_id, pks, child_ta
 
 
         # for each relationship bound by an on-delete cascade
-        #   Get the child table reference table, the primary key of the rows affect and check recursively for the same constraints on grandchildren table
+        #   Get the child table reference table, the primary key of the rows affected and check recursively for the same constraints on grandchildren table
         #       Because other rows might depend on that child row.
 
-        all_child_entrylists = [] # keep track so we can cascade them if all goes well.
+        all_child_entrylists = [] # keep track of the entrylists so we can cascade delete them if all goes well.
         child_table_reference_entrylists = {}
 
         c_rel_ids = []
@@ -129,7 +133,7 @@ def traverse_table_ref_entrylist_child_tables(db, fk_ref_table_id, pks, child_ta
             grand_children_table_params = db.session.scalars(stmt).all()
             if not grand_children_table_params:
                 continue
-            can_delete = traverse_table_ref_entrylist_child_tables(db, child_ref_table_id, list(pks), grand_children_table_params, recursive_depth)
+            can_delete = traverse_table_ref_entrylist_child_tables(db, child_ref_table_id, list(pks), grand_children_table_params, recursive_depth, visited_ref_ids)
 
             if not can_delete:
                 return False
@@ -148,16 +152,21 @@ def traverse_table_ref_entrylist_child_tables(db, fk_ref_table_id, pks, child_ta
     # handle nullable child tables
     if nullable_child_table_ids:
         # set the entries of the nullable child table to null
-        rel_stmt_subq = db.select(EntryList.id).join(Relationship.entrylists).where(
-                                                                        Relationship.entry_ref_pk.in_(pks),
-                                                                        Relationship.foreign_key_rel_id==fk_ref_table_id,
-                                                                        Relationship.child_table_id.in_(nullable_child_table_ids)
-                                                                        )
+        # rel_stmt_subq = db.select(EntryList.id).join(Relationship.entrylists).where(
+        #                                                                 Relationship.entry_ref_pk.in_(pks),
+        #                                                                 Relationship.foreign_key_rel_id==fk_ref_table_id,
+        #                                                                 Relationship.child_table_id.in_(nullable_child_table_ids)
+        #                                                                 )
 
-        update_entry_stmt = db.update(Entry).where(
-                                                    Entry.entry_list_id.in_(rel_stmt_subq),
-                                                    Entry.tableparameter_id.in_(nullable_child_table_param_ids)
-                                                ).values(value=None)
+        # update_entry_stmt = db.update(Entry).where(
+        #                                             Entry.entry_list_id.in_(rel_stmt_subq),
+        #                                             Entry.tableparameter_id.in_(nullable_child_table_param_ids)
+        #                                         ).values(value=None)
+
+        entrylist_stmt_subq = db.select(EntryList.id).where(EntryList.primary_key_value.in_(pks))
+        update_entry_stmt = db.update(Entry).where(Entry.tableparameter_id.in_(nullable_child_table_param_ids), 
+                                                              Entry.fk_entry_list_id.in_(entrylist_stmt_subq)
+                                                            ).values(fk_entry_list_id=None, value=None)
 
         # dissociate the entrylist from the pk relationship
         delete_rel_stmt = db.delete(Relationship).where(
@@ -281,6 +290,8 @@ def delete_entrylists(db, fk_ref_table_id, entrylists):
     except RecursionError as e:
         return False, str(e), 409
     except Exception as e:
+        if type(error) == dict and "error" in e:
+            return False, e["error"], 422
         print(e)
         return False, "An error occured", 400
 

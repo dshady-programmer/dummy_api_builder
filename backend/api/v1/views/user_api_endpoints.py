@@ -145,7 +145,7 @@ def delete_api(user, id):
     if not status:
         return format_response(status="error", message=msg, code=code)
 
-    list_key = f"{user_cache_namespace(user.id)}:apis"
-    detail_key = f"{api_cache_namespace(user.id, api.id)}:detail"
-    multiple_key_delete([list_key, detail_key])
+    # list_key = f"{user_cache_namespace(user.id)}:apis"
+    # detail_key = f"{api_cache_namespace(user.id, api.id)}:detail"
+    # multiple_key_delete([list_key, detail_key])
     return format_response(code=204)

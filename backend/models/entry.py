@@ -38,7 +38,7 @@ class Entry(db.Model):
     entry_list_id = db.Column(db.Integer, db.ForeignKey('entrylist.id', ondelete='CASCADE'), index=True)
     entry_list = db.relationship('EntryList', back_populates='entries')
 
-    fk_entry_list_id = db.Column(db.Integer, db.ForeignKey('entrylist.id', ondelete='SET NULL'), nullable=True)
+    fk_entry_list_id = db.Column(db.Integer, db.ForeignKey('entrylist.id', ondelete='SET NULL'), nullable=True, index=True)
     __table_args__ = (
         db.CheckConstraint('entry_list_id != fk_entry_list_id', name='check_fk_entry_list_id_not_same_as_entry_list_id'),
         {'sqlite_autoincrement': True}  # Ensure that the id is always incremented and not reused after deletion

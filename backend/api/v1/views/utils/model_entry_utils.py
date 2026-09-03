@@ -45,7 +45,8 @@ def validate_create_update_entry_items(
         primary_key_fields, tracked_pks=set(), 
         tracked_unique_values={}, 
         tracked_fk_values={"relationships": {}, "values": {}}, 
-        update=False
+        update=False,
+        bulk=False
     ):
     
     primary_keys = []
@@ -60,7 +61,7 @@ def validate_create_update_entry_items(
         tbl_p = parameters[entry_name]
         if type(entry_value) == str:
             entry_value = entry_value.strip()
-        stat, const_type, err_msg, default_return_value = validate_entry_constraints(entry_value, tbl_p, tracked_pks, tracked_unique_values, tracked_fk_values) # Validating the entry against the existing constraint
+        stat, const_type, err_msg, default_return_value = validate_entry_constraints(entry_value, tbl_p, tracked_unique_values, tracked_fk_values) # Validating the entry against the existing constraint
         if const_type == "default" and stat:
             entry_value = default_return_value # set default value
         elif const_type == "nullable" and stat:
@@ -133,10 +134,12 @@ def validate_create_update_entry_items(
             raise Exception({"error": "Primary key field provided doesn't match with your table primary keys"})
         primary_key_value = "-".join([ str(key["value"]) for key in primary_keys_sorted]) # for composite keys join the multiple keys with "-"
         # check if primary key already exists
+
+
         
-        if primary_key_value in tracked_pks or db.session.scalar(
+        if primary_key_value in tracked_pks or (not bulk and db.session.scalar(
                 db.select(EntryList).filter_by(table_id=table.id, primary_key_value=primary_key_value)
-            ):
+            )): # for bulk write do the pk db check after, querying the database for each iteration can be expensive. O(n) network calls.
             raise Exception({"error": "Primary key already exist"})
         
         # Check if this primary key is already associated with a relationship
@@ -163,10 +166,11 @@ def validate_create_update_entry_items(
 def create_entry(table, entry, tracked_pks, 
                  tracked_unique_values, 
                  tracked_fk_values,
-                 cached_required_parameters, 
-                 cached_parameters, 
-                 cached_primary_key_fields,
-                 cached_default_pk_fields
+                 cached_required_parameters=[], 
+                 cached_parameters={}, 
+                 cached_primary_key_fields=set(),
+                 cached_default_pk_fields={},
+                 bulk=False
                  ):
 
     """
@@ -238,14 +242,14 @@ def create_entry(table, entry, tracked_pks,
 
 
         
-        t_changes, pending_unique_changes, v_entry_state = validate_create_update_entry_items(entry, parameters, e_list, table, primary_key_fields, tracked_pks, tracked_unique_values, tracked_fk_values)
+        t_changes, pending_unique_changes, v_entry_state = validate_create_update_entry_items(entry, parameters, e_list, table, primary_key_fields, tracked_pks, tracked_unique_values, tracked_fk_values, bulk)
         tracked_changes.extend(t_changes)
         # after all the required parameters have been sorted
         # iterate over the remaining parameters and create an entry for them with null values and also ensure they do have nullable constraints on their respective fields (thus validating that non-nullable fields are indeed passed)
         for tb_param_name, tb_param  in parameters.items():
             tbl_constraints = [c.name.value for c in tb_param.constraints]
             if "nullable" in tbl_constraints or "default" in tbl_constraints:
-                stat, const_type, err_msg, default_return_value = validate_entry_constraints(None, tb_param, tracked_pks, tracked_unique_values, tracked_fk_values)
+                stat, const_type, err_msg, default_return_value = validate_entry_constraints(None, tb_param, tracked_unique_values, tracked_fk_values)
                 if "default" in tbl_constraints:
                     if const_type == "default_fk":
                         rel = validate_create_fk_relationships(tb_param, default_return_value, tracked_fk_values, e_list, stat, err_msg)
@@ -478,7 +482,7 @@ def paginate_entry(entrylist_array, page, size, offset):
     
 
 def list_entries(args, table):
-    unfiltered = False
+    # unfiltered = False
     page = None
     size = 10
 

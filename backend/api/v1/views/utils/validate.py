@@ -19,7 +19,7 @@ from .parsers import datetime_repr
 
 
 
-def autogenerate_keys(tb_param, tracked_pks):
+def autogenerate_keys(tb_param):
     datatype = tb_param.data_type.name 
     value = None
 
@@ -29,11 +29,9 @@ def autogenerate_keys(tb_param, tracked_pks):
         
         else:
             lowest_value = 1
-            value = secrets.randbelow(2000001)
+            value = secrets.randbelow(200000001)
             if value < lowest_value:
                 continue
-        if value in tracked_pks:
-            break
         e = Entry.query.filter_by(tableparameter_id=tb_param.id, value=value).first()
         if not e:
             break
@@ -127,7 +125,7 @@ def validate_entry_value_length(value, type, length):
     return True
 
 
-def validate_entry_constraints(value, tbl_p, tracked_pks, tracked_unique_values, tracked_fk_values):
+def validate_entry_constraints(value, tbl_p, tracked_unique_values, tracked_fk_values):
     fk = None
     default_value = None
     consts = [const.name.value for const in tbl_p.constraints]
@@ -138,7 +136,7 @@ def validate_entry_constraints(value, tbl_p, tracked_pks, tracked_unique_values,
 
                 if tbl_p.primary_key:
                     # auto generate keys for primary keys
-                    default_value = autogenerate_keys(tbl_p, tracked_pks)
+                    default_value = autogenerate_keys(tbl_p)
                 elif "foreign_key" in consts:
                     # value = tbl_p.default_value # we need to ensure the default value exist.
                     val = tbl_p.foreign_key_default_value.primary_key_value

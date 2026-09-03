@@ -112,7 +112,6 @@ def add_list_entry(api_token, api_name, model_name):
                         tracked_pks, 
                         tracked_unique_values,
                         tracked_fk_values, 
-                        [], {}, set(), {}
                     )
             
             if 'error' in response:
@@ -133,7 +132,8 @@ def add_list_entry(api_token, api_name, model_name):
                     table, entry, tracked_pks, tracked_unique_values,
                     tracked_fk_values,
                     cached_required_parameters, cached_parameters,
-                    cached_primary_key_fields, cached_default_pk_fields
+                    cached_primary_key_fields, cached_default_pk_fields, 
+                    bulk=True
                 )
 
                 if 'error' in response:
@@ -147,6 +147,14 @@ def add_list_entry(api_token, api_name, model_name):
                     # executor_thread.submit(update_entry_list_cache_on_add_new_entries, list_cache_key, responses)
                 else:
                     responses.append(response)
+
+            # for bulk write check that any of the primary keys do not exist in the database.
+            pk_exist_stmt = db.select(db.exists().where(EntryList.table_id==table.id, EntryList.primary_key_value.in_(tracked_pks)))
+            pk_exist = db.scalar(pk_exist_stmt)
+            if pk_exist:
+                db.session.rollback() # all or nothing here
+                return format_response(status="error", message="Integrity Error: One of the primary keys already exist in the database", code=409)
+
 
 
             num_of_responses = len(responses)
@@ -185,6 +193,7 @@ def add_list_entry(api_token, api_name, model_name):
                 return format_response(status="error", message=response["error"], code=400)
             return format_response(data=response)
         except Exception as e:
+            print(e)
             return format_response(status="error", message="Internal error", code=500)
 
 
@@ -224,7 +233,7 @@ def update_delete_retrieve_entry(api_token, api_name, model_name, model_id):
     e_list_stmt = e_list_stmt.with_for_update() if request.method == 'PUT' else e_list_stmt
     e_list = db.session.scalar(e_list_stmt)
     if not e_list:
-            return format_response(status="error", message="primary key value doesn't match any", code=400)
+        return format_response(status="error", message="primary key value doesn't match any", code=400)
     # child_tables = []
     
     
