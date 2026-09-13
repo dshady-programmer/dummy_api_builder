@@ -7,9 +7,7 @@ from api.v1.views import app_views
 from flask import request
 from .utils.response import format_response
 from api.v1.auth.auth import login_required
-from models.api import Api
-from models.table import Table
-from models import db
+from models import db, Table, Api, EntryList,UserLimit
 from .utils.validate import validate_name
 from .utils.cache_utils import (
     get_cache, set_cache, 
@@ -18,9 +16,10 @@ from .utils.cache_utils import (
 )
 from .utils.resource_delete_utils import delete_API
 from sqlalchemy.orm import selectinload
-
+from .utils.exceptions import exception_handler
 
 @app_views.route('/my_apis')
+@exception_handler
 @login_required
 def my_api_list(user):
     # from models.tableparameter import parameter_constraints
@@ -52,6 +51,7 @@ def my_api_list(user):
 
 
 @app_views.route('/my_api/<api_id>')
+@exception_handler
 @login_required
 def my_api_detail(user, api_id):
 
@@ -85,6 +85,7 @@ def my_api_detail(user, api_id):
 
 
 @app_views.route('/create_new_api', methods=["POST"])
+@exception_handler
 @login_required
 def create_new_api(user):
     data = request.get_json()
@@ -98,16 +99,22 @@ def create_new_api(user):
     if not validate_name(name):
         return format_response(status="error", message="Api name must be a valid python identifier, not a keyword and must be atleast 3 letters", code=400)
 
+
+
     new_api = Api(name=name, description=description, user_id=user.id)
     db.session.add(new_api)
     # key = f"{user_cache_namespace(user.id)}:apis"
     # delete_cache(key)
     db.session.commit()
+
+    db.session.rollback()
+    return format_response(status="error", message="Database integrity error occurred", code=400)
     return format_response(data={"id": new_api.id, "name": new_api.name, "desc": new_api.description})
 
 
 
 @app_views.route('/update_api/<id>', methods=['PUT'])
+@exception_handler
 @login_required
 def update_api_info(user, id):
     data = request.get_json()
@@ -126,14 +133,19 @@ def update_api_info(user, id):
     # list_key = f"{user_cache_namespace(user.id)}:apis"
     # detail_key = f"{api_cache_namespace(user.id, api.id)}:detail"
     # multiple_key_delete([list_key, detail_key])
+    
     db.session.commit()
+    
+    db.session.rollback()
+    
     return format_response(data={"id": api.id, "name": api.name, "desc": api.description})
 
 
 @app_views.route('/delete_api/<id>', methods=['DELETE'])
+@exception_handler
 @login_required
 def delete_api(user, id):
-    stmt = db.select(Api).filter_by(id=id, user_id=user.id).options(selectinload(Api.tables).joinedload(Table.reference))
+    stmt = db.select(Api).filter_by(id=id, user_id=user.id).options(selectinload(Api.tables).joinedload(Table.reference)).with_for_update()
     api = db.session.scalar(stmt)
     if not api:
         return format_response(status="error", message=f"api with id {id} doesn't exist", code=400)
@@ -143,9 +155,30 @@ def delete_api(user, id):
     status, msg, code = delete_API(db, api)
 
     if not status:
+        db.session.rollback()
         return format_response(status="error", message=msg, code=code)
 
     # list_key = f"{user_cache_namespace(user.id)}:apis"
     # detail_key = f"{api_cache_namespace(user.id, api.id)}:detail"
     # multiple_key_delete([list_key, detail_key])
-    return format_response(code=204)
+
+    db.session.execute(
+        db.select(Table).where(Table.id.in_([tables])).order_by(Table.id).with_for_update()
+    ) # temporarily acquire lock on the tables to be deleted to prevent a separate process modifying the tables
+
+    tables = msg["tables"]
+    entrylist_count_stmt = db.select(db.func.count(EntryList.id)).where(
+        EntryList.table_id.in_(tables)
+    )
+    entrylist_count = db.session.scalar(entrylist_count_stmt)
+
+    db.session.execute(
+        db.update(UserLimit).where(
+            UserLimit.user_id == user.id,
+            UserLimit.current_tables >= len(tables),
+            UserLimit.current_rows >= entrylist_count
+        ).values(current_tables=UserLimit.current_tables - len(tables), 
+                 current_rows=UserLimit.current_rows - entrylist_count)
+    )
+    db.session.commit()
+    return format_response(code=code)

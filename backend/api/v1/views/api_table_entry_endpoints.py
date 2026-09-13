@@ -37,9 +37,11 @@ from .utils.cache_utils import (
 
 )
 from .utils.parsers import parse_value, csv_file_parser
+from utils.exceptions import exception_handler
 
 
 @app_views.route('<api_token>/my_api/<api_name>/model/<model_name>', methods=["GET", "POST"])
+@exception_handler
 def add_list_entry(api_token, api_name, model_name):
     user_stmt = db.select(User).filter_by(api_token=api_token)
     user = db.session.scalar(user_stmt)
@@ -51,11 +53,15 @@ def add_list_entry(api_token, api_name, model_name):
     api = db.session.scalar(api_stmt)
     if not api:
         return format_response(status="error", message=f"{api_name} does not exists in the users catalog", code =400)
-    table_stmt_post = db.select(Table).filter_by(name=model_name, api_id=api.id)\
-        .options(selectinload(Table.table_parameters).selectinload(TableParameter.constraints),
-                 selectinload(Table.table_parameters).joinedload(TableParameter.foreign_key_reference_table)\
-                                                    .joinedload(TableParameter.foreign_key_default_value))\
+    table_stmt_post = (
+        db.select(Table).filter_by(name=model_name, api_id=api.id)
+        .options(
+                    selectinload(Table.table_parameters).selectinload(TableParameter.constraints),
+                    selectinload(Table.table_parameters).joinedload(TableParameter.foreign_key_reference_table)
+                                                    .joinedload(TableParameter.foreign_key_default_value)
+                )
         .with_for_update()
+    )
 
     table_stmt_get = db.select(Table).filter_by(name=model_name, api_id=api.id)\
             .options(selectinload(Table.entry_lists).selectinload(EntryList.entries)\
@@ -199,6 +205,7 @@ def add_list_entry(api_token, api_name, model_name):
 
 
 @app_views.route('<api_token>/my_api/<api_name>/model/<model_name>/<model_id>', methods=["PUT", "GET", "DELETE"])
+@exception_handler
 def update_delete_retrieve_entry(api_token, api_name, model_name, model_id):
 
     user_stmt = db.select(User).filter_by(api_token=api_token)
@@ -222,7 +229,7 @@ def update_delete_retrieve_entry(api_token, api_name, model_name, model_id):
     table_stmt_default = db.select(Table).filter_by(name=model_name, api_id=api.id)\
                         .options(joinedload(Table.reference))
 
-    table_stmt = table_stmt_put if request.method == "PUT" else table_stmt_default
+    table_stmt = table_stmt_put if request.method == "PUT" else table_stmt_default.with_for_update() if request.method == "DELETE" else table_stmt_default
     table = db.session.scalar(table_stmt)
     if not table:
         return format_response(status="error", message=f"model {model_name} doesn't exist in the api", code=400)
@@ -230,7 +237,7 @@ def update_delete_retrieve_entry(api_token, api_name, model_name, model_id):
     e_list_stmt = db.select(EntryList)\
         .filter_by(table_id=table.id, primary_key_value = model_id)\
         .options(selectinload(EntryList.entries))
-    e_list_stmt = e_list_stmt.with_for_update() if request.method == 'PUT' else e_list_stmt
+    e_list_stmt = e_list_stmt.with_for_update() if request.method in ['PUT', 'DELETE'] else e_list_stmt
     e_list = db.session.scalar(e_list_stmt)
     if not e_list:
         return format_response(status="error", message="primary key value doesn't match any", code=400)
@@ -264,9 +271,16 @@ def update_delete_retrieve_entry(api_token, api_name, model_name, model_id):
     if request.method == "DELETE":
         status, msg, code = delete_entrylists(db, fk_ref_table.id, [e_list])
         if status:
+            user_rows_update_stmt = db.update(UserLimit).where(
+                            UserLimit.user_id == user.id,
+                            UserLimit.current_rows > 0
+                        ).values(current_rows = UserLimit.current_rows - 1)
+            db.session.execute(user_rows_update_stmt)
+            db.session.commit()
             return format_response(code=code, message="Entry succesfully deleted")
 
         else:
+            db.session.rollback()
             return format_response(status="error", message=msg, code=code)
 
     if request.method == "GET":

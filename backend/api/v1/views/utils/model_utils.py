@@ -1,7 +1,8 @@
 from models import (
     db, TableParameter,
     Constraint, Relationship, 
-    UserLimit
+    UserLimit,
+    MAX_TABLE_FOR_USER
 )
 from sqlalchemy.orm import selectinload
 from sqlalchemy import text
@@ -390,7 +391,7 @@ def parse_and_create_tableparameters(table_parameters, new_table, user):
     else:
         # key = f"{api_cache_namespace(user.id, new_table.api_id)}:detail"
         # delete_cache(key)
-        stmt = db.update(UserLimit).where(UserLimit.user_id==user.id).values(current_tables=UserLimit.current_tables + 1)
+        stmt = db.update(UserLimit).where(UserLimit.user_id==user.id, UserLimit.current_tables < MAX_TABLE_FOR_USER).values(current_tables=UserLimit.current_tables + 1)
         db.session.execute(stmt)
         db.session.commit()
         return {"id": new_table.id, "name": new_table.name, "desc": new_table.description}

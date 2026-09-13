@@ -176,8 +176,8 @@ def traverse_table_ref_entrylist_child_tables(db, fk_ref_table_id, pks, child_ta
                             )
 
         # send to the db but don't execute yet.
-        db.execute(update_entry_stmt)
-        db.execute(delete_rel_stmt)
+        db.session.execute(update_entry_stmt)
+        db.session.execute(delete_rel_stmt)
     return True
     
     
@@ -244,7 +244,7 @@ def delete_API(db, api):
             try:
                 db.session.delete(api)
                 db.session.commit()
-                return True, None, 204
+                return True, {"tables": table_ids}, 204
 
             except Exception as e:
                 print(e)

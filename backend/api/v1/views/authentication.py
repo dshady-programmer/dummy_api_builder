@@ -3,6 +3,7 @@ Define all user's authentication routes here
 """
 
 from api.v1.views import app_views
+from backend.api.v1.views.utils.exceptions import exception_handler
 from .utils.response import format_response
 from flask import request
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -14,6 +15,7 @@ import jwt
 
 
 @app_views.route("/signup", methods=["POST"])
+@exception_handler
 def signup():
 
     data = request.get_json()
@@ -50,6 +52,7 @@ def signup():
 
 
 @app_views.route("/login", methods=["POST"])
+@exception_handler
 def login():
     credentials = request.get_json()
     email = credentials.get("email")
@@ -103,6 +106,7 @@ def login():
 
 
 @app_views.route("/me")
+@exception_handler
 @login_required
 def get_me(user):
     details = {"email": user.email, "api_token": user.api_token}
@@ -110,6 +114,7 @@ def get_me(user):
 
 
 @app_views.route("/logout", methods=["POST"])
+@exception_handler
 @login_required
 def logout(user):
     user.public_id = None

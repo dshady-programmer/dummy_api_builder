@@ -22,7 +22,7 @@ from .utils.cache_utils import (
     api_cache_namespace, multiple_key_delete
 
 )
-
+from .utils.exceptions import exception_handler
 
 """
 We won't be implementing a table/model list endpoint
@@ -31,6 +31,7 @@ as it would have been added with api_list
 
 
 @app_views.route('/my_api/<api_id>/create_model', methods=["POST"])
+@exception_handler
 @login_required
 def create_model(user, api_id):
     data = request.get_json()
@@ -52,7 +53,7 @@ def create_model(user, api_id):
     if not name:
         return format_response(status="error", message="name of the model is required", code=400)
 
-    api_stmt = db.select(db.exists().where(Api.id == api_id, Api.user_id == user.id))
+    api_stmt = db.select(Api).filter_by(id=api_id, user_id=user.id).with_for_update()
     api = db.session.scalar(api_stmt)
     if not api:
         return format_response(status="error", message="no api of such is associated with the user", code=400)
@@ -66,19 +67,17 @@ def create_model(user, api_id):
         return format_response(status="error", message="Table name must be a valid python identifier, not a python keyword and must be atleast 3 letters", code=400)
     new_table = Table(name=name, description=description, api_id=api_id)
     db.session.add(new_table)
-    try:
-        response = parse_and_create_tableparameters(table_parameters, new_table, user)
-        if 'error' in response:
-            return format_response(status="error", message=response['error'], code=400)
 
-        return format_response(data=response, code=201)
-    except Exception as e:
-        print(e)
-        return format_response(status="error", message="Database Integrity Error", code=409)
+    response = parse_and_create_tableparameters(table_parameters, new_table, user)
+    if 'error' in response:
+        return format_response(status="error", message=response['error'], code=400)
+
+    return format_response(data=response, code=201)
 
 
 
 @app_views.route('/my_api/<api_id>/update_model/<model_id>', methods=["PUT"])
+@exception_handler
 @login_required
 def update_model(user, api_id, model_id):
     data = request.get_json()
@@ -124,28 +123,24 @@ def update_model(user, api_id, model_id):
         table.description = description
         # should_invalidate_api_detail = True
 
-    try:
-        response = parse_and_update_tableparameters(table_parameters, table, user, entry_present)
-        if 'error' in response:
-            return format_response(status="error", message=response['error'], code=400)
 
-        # table_cache_key = f"{api_cache_namespace(user.id, api_id)}:model:{table.id}"
-        # if should_invalidate_api_detail:
-        #     api_cache_key = f"{api_cache_namespace(user.id, api_id)}:detail"
-        #     multiple_key_delete([table_cache_key, api_cache_key])
-        # else:
-        #     delete_cache(table_cache_key)
+    response = parse_and_update_tableparameters(table_parameters, table, user, entry_present)
+    if 'error' in response:
+        return format_response(status="error", message=response['error'], code=400)
 
-        return format_response(data=response)
+    # table_cache_key = f"{api_cache_namespace(user.id, api_id)}:model:{table.id}"
+    # if should_invalidate_api_detail:
+    #     api_cache_key = f"{api_cache_namespace(user.id, api_id)}:detail"
+    #     multiple_key_delete([table_cache_key, api_cache_key])
+    # else:
+    #     delete_cache(table_cache_key)
+
+    return format_response(data=response)
         
-    except Exception as e:
-        print(e)
-        return format_response(status="error", message="Database Integrity Error", code=409)
-
-
 
 
 @app_views.route('/my_api/<api_id>/show_model/<model_id>', methods=["GET"])
+@exception_handler
 @login_required
 def show_model(user, api_id, model_id):
     # key = f"{api_cache_namespace(user.id, api_id)}:model:{model_id}"
@@ -219,22 +214,30 @@ def show_model(user, api_id, model_id):
 
 
 @app_views.route('/my_api/<api_id>/delete_model/<model_id>', methods=["DELETE"])
+@exception_handler
 @login_required
 def delete_model(user, api_id, model_id):
-    api_stmt = db.select(db.exists().where(Api.id == api_id, Api.user_id == user.id))
+    # api_stmt = db.select(db.exists().where(Api.id == api_id, Api.user_id == user.id))
+    api_stmt = db.select(Api).where(Api.id == api_id, Api.user_id == user.id).with_for_update()
     api = db.session.scalar(api_stmt)
     if not api:
         return format_response(status="error", message="no api of such is associated with the user", code=404)
 
-    table_stmt = db.select(Table).filter_by(id=model_id, api_id=api_id).options(joinedload(Table.reference))
+    table_stmt = db.select(Table).filter_by(id=model_id, api_id=api_id).options(joinedload(Table.reference)).with_for_update()
+
     t = db.session.scalar(table_stmt)
     if not t:
         return format_response(status="error", message= "Table doesn't exist", code=404)
 
 
+    table_row_count = db.session.scalar(
+        db.select(db.func.count(EntryList.id)).where(EntryList.table_id==t.id)
+    )
+
     # delete table but with a check on relationships
     status, msg, code = delete_table(db, t)
     if not status:
+        db.session.rollback()
         return format_response(status="error", message=msg, code=code)
 
     
@@ -242,8 +245,19 @@ def delete_model(user, api_id, model_id):
     # num_entries = f"{api_cache_namespace(user.id, api_id)}:model:{t.id}:num_of_entries"
     # api_cache_key = f"{api_cache_namespace(user.id, api_id)}:detail"
     # multiple_key_delete([table_cache_key, num_entries, api_cache_key])
+    
 
-
+    db.session.execute(
+        db.update(UserLimit).where(
+            UserLimit.user_id == user.id,
+            UserLimit.current_rows >= table_row_count,
+            UserLimit.current_tables >= 1
+        ).values(
+            current_rows = UserLimit.current_rows - table_row_count, 
+            current_tables = UserLimit.current_tables - 1
+        )
+    )
+    db.session.commit()
    
     return format_response(code=code)
 
@@ -251,29 +265,43 @@ def delete_model(user, api_id, model_id):
 
  
 @app_views.route('/my_api/<api_id>/truncate_model/<model_id>', methods=["DELETE"])
+@exception_handler
 @login_required
 def truncate_model(user, api_id, model_id):
-    from models.relationship import entrylist_relationships
-    api_stmt = db.select(db.exists().where(Api.id == api_id, Api.user_id == user.id))
+
+    api_stmt = db.select(Api).where(Api.id == api_id, Api.user_id == user.id).with_for_update()
     api = db.session.scalar(api_stmt)
     if not api:
         return format_response(status="error", message="no api of such is associated with the user", code=404)
   
-    table_stmt = db.select(Table).filter_by(id=model_id, api_id=api_id).options(joinedload(Table.reference))
+    table_stmt = db.select(Table).filter_by(id=model_id, api_id=api_id).options(joinedload(Table.reference)).with_for_update()
     t = db.session.scalar(table_stmt)
     if not t:
         return format_response(status="error", message="Table doesn't exist", code=400)
 
-    entrylist_stmt = db.select(EntryList).filter_by(table_id=t.id)
-    entrylists = db.session.scalars(entrylist_stmt).all()
+
+    entrylists_count = db.session.scalar(
+        db.select(db.func.count(EntryList.id)).where(EntryList.table_id==t.id)
+    )
+
+
 
     status, msg, code = delete_entrylists(db, t.reference.id, entrylists)
 
     if status:
         # num_entries = f"{api_cache_namespace(user.id, api_id)}:model:{model_id}:num_of_entries"
         # set_cache(num_entries, 0)
+
+        db.session.execute(
+            db.update(UserLimit).where(
+                    UserLimit.user_id == user.id,
+                    UserLimit.current_rows >= entrylists_count
+                ).values(current_rows = UserLimit.current_rows - entrylists_count)
+        )
+        db.session.commit()
         return format_response(code=code)
     else:
+        db.session.rollback()
         return format_response(status="error", message=msg, code=code)
 
 
