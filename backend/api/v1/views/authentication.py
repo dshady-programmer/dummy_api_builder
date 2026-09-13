@@ -3,7 +3,7 @@ Define all user's authentication routes here
 """
 
 from api.v1.views import app_views
-from backend.api.v1.views.utils.exceptions import exception_handler
+from .utils.exceptions import exception_handler
 from .utils.response import format_response
 from flask import request
 from werkzeug.security import generate_password_hash, check_password_hash

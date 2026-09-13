@@ -37,7 +37,7 @@ from .utils.cache_utils import (
 
 )
 from .utils.parsers import parse_value, csv_file_parser
-from utils.exceptions import exception_handler
+from .utils.exceptions import exception_handler
 
 
 @app_views.route('<api_token>/my_api/<api_name>/model/<model_name>', methods=["GET", "POST"])

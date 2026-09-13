@@ -1,5 +1,5 @@
 from functools import wraps
-from sqlachemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError
 from models import db
 
 def exception_handler(func):
