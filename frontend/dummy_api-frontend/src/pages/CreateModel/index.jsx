@@ -3,17 +3,21 @@ import { useContext, useEffect } from "react"
 import { AppContext } from "../../context"
 import { useParams } from "react-router-dom"
 import ErrorElement from "../../components/ErrorElement"
+import { Bars } from 'react-loader-spinner'
 
 const Index = () => {
     const params = useParams()
-    const { loading, fetchApiDetail, apiDetail, apiDetailNotFound } = useContext(AppContext)
+    const { apiDetailLoading, fetchApiDetail, apiDetail, apiDetailNotFound } = useContext(AppContext)
+
     useEffect(() => {
-        let cancelled = false
-        if (!apiDetail) fetchApiDetail(params.apiId, cancelled)
-        return () => {
-            cancelled = true
-        }
-    }, [params.apiId, apiDetail, fetchApiDetail])
+
+        const controller = new AbortController();
+
+        if (!apiDetail)
+            fetchApiDetail(params.apiId, controller.signal)
+        return () => controller.abort() // automatically cancels the fetch and triggers abort error
+    }, [params.apiId, fetchApiDetail, apiDetail])
+
     const mParam = {
         name: "",
         description: "",
@@ -22,7 +26,21 @@ const Index = () => {
     return (
         <>
             {
-                loading ? "" : !loading && !apiDetail && apiDetailNotFound ? <ErrorElement /> : <ModelForm fList={[]} mParam={mParam} title={"CREATE NEW MODEL"} btnTitle="CREATE" method="POST" endpoint="create_model" />
+                apiDetailLoading ? <div className="loading-wrapper">
+
+                    <Bars
+                        height="80"
+                        width="80"
+                        color="#44859F"
+                        ariaLabel="bars-loading"
+                        wrapperStyle={{}}
+                        wrapperClass="loading_element"
+                        visible={true}
+                    />
+                </div> :
+                (!apiDetailLoading && !apiDetail) ? <ErrorElement /> :  (!apiDetailLoading && apiDetailNotFound) ? <ErrorElement notFound={true}/>  : 
+                
+                <ModelForm fList={[]} mParam={mParam} title={"CREATE NEW MODEL"} btnTitle="CREATE" method="POST" endpoint="create_model" />
 
             }
         </>

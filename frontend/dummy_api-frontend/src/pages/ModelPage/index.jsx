@@ -11,7 +11,7 @@ import { hostUrl } from "../../variables"
 
 const Index = () => {
     const navigate = useNavigate()
-    const { fetchModel, model, user, loading, modelDetailNotFound } = useContext(AppContext)
+    const { fetchModel, model, user, modelLoading, modelDetailNotFound } = useContext(AppContext)
     const [openSeedPopup, setOpenSeedPopup] = useState(false)
     const token = Cookies.get('token', { path: '/' })
     const params = useParams()
@@ -32,7 +32,7 @@ const Index = () => {
         if (res.status === 204) {
             alert("Model deleted successfully")
         }
-        else if (res.status === 400) {
+        else if (res.status >= 400) {
             const msg = await res.json()
             alert(msg.message || "An error occurred while deleting the model.")
             return
@@ -58,7 +58,7 @@ const Index = () => {
             alert("Model table truncated successfully")
             return
 
-        } else if (res.status === 400) {
+        } else if (res.status >= 400) {
             const msg = await res.json()
             alert(msg.message || "An error occurred while truncating the model.")
             return
@@ -67,12 +67,12 @@ const Index = () => {
     }
 
     useEffect(() => {
-        let cancelled = false
-        fetchModel(apiId, modelId, cancelled)
-        return () => cancelled = true
+        const modelController = new AbortController
+        fetchModel(apiId, modelId, modelController.signal)
+        return () => modelController.abort()
     }, [apiId, modelId, fetchModel])
 
-    if (loading) {
+    if (modelLoading) {
         return <div className="loading-wrapper">
 
             <Bars
@@ -89,7 +89,7 @@ const Index = () => {
     return (
         <div className="modelPage-wrapper">
             {
-                (!loading && !model) || (!loading && modelDetailNotFound) ? <ErrorElement /> : <>
+                (!modelLoading && !model) ? <ErrorElement /> : (!modelLoading && modelDetailNotFound) ? <ErrorElement notFound={true} /> : <>
                     <section className="modelPage_header">
                         <h2>{model?.name}</h2>
                         <p>{model?.desc}</p>
@@ -167,7 +167,7 @@ const SeedPopup = ({ openSeedPopup, setOpenSeedPopup, user, model, refetchModel 
         const formData = new FormData(e.target)
         // console.log("user", user, model)
         if (formId === "autogenerate_form") {
-            const numRows = formData.get('num_rows') || 100
+            // const numRows = formData.get('num_rows') || 100
 
             // Handle auto-generate 
             // coming in v2.

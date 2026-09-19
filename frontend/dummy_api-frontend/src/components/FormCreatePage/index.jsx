@@ -21,6 +21,7 @@ const Index = ({ title, nameValue, descValue, buttonTitle, endpoint, method }) =
     }
     const handleSubmit = async e => {
         e.preventDefault()
+        if (loading) return
         setState({ type: "", message: "" })
         if (!apiData.name) {
             setState({ type: "error", message: "Provide a name for the api" })

@@ -2,12 +2,12 @@ import "./index.scss"
 import Header from "../../components/Header"
 import Sidebar from "../../components/Sidebar"
 import { Outlet, useLocation, useParams } from "react-router-dom"
-import { useEffect, useContext } from "react"
+import { useEffect, useContext, useRef } from "react"
 import { AppContext } from "../../context"
 
 
 const Index = () => {
-    const { fetchApis, user, fetchUser, apis, invalidate, setInvalidate } = useContext(AppContext)
+    const { fetchApis, user, fetchUser, apis, invalidate } = useContext(AppContext)
     const location = useLocation();
     const locationPathname = location.pathname.split('/')
     const params = useParams();
@@ -33,12 +33,26 @@ const Index = () => {
     ]
 
     useEffect(() => {
-        if (!user) fetchUser();
-        if (invalidate || !apis) {
-            fetchApis();
-            setInvalidate(false)
+        const fetchUserController = new AbortController()
+        
+        if (!user) {
+            fetchUser(fetchUserController.signal);
         }
-    }, [invalidate, apis, fetchUser, fetchApis, user, setInvalidate])
+        // console.log(invalidate, apis)
+        
+        return () => fetchUserController.abort()
+    }, [fetchUser, user])
+
+    useEffect(() => {
+        const fetchApiController = new AbortController()
+
+        if (invalidate || (!apis)) {
+            fetchApis(fetchApiController.signal);
+        }
+        return () => {
+            fetchApiController.abort()
+        }
+    }, [apis, fetchApis, invalidate])
     return (
     
             <div>

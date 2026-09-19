@@ -51,8 +51,11 @@ def traverse_table_reference_child_tables(child_table_params, table_ids = None):
 
 
 
-def traverse_table_ref_entrylist_child_tables(db, fk_ref_table_id, pks, child_table_params, recursive_depth=1, visited_ref_ids=set()):
+def traverse_table_ref_entrylist_child_tables(db, fk_ref_table_id, pks, child_table_params, recursive_depth=1, visited_ref_ids=None):
+    if visited_ref_ids is None:
+        visited_ref_ids = set()
 
+    num_rows_deleted = 0
     print("recursive depth", recursive_depth)
     if recursive_depth > 5:
         raise RecursionError(
@@ -90,7 +93,7 @@ def traverse_table_ref_entrylist_child_tables(db, fk_ref_table_id, pks, child_ta
     is_ref = db.session.scalar(protected_rel_stmt)
     print('is ref', is_ref)
     if is_ref:
-        return False # There's an active relationship on a protected row
+        return False, num_rows_deleted # There's an active relationship on a protected row
 
     # If there isn't then check for others
 
@@ -124,19 +127,20 @@ def traverse_table_ref_entrylist_child_tables(db, fk_ref_table_id, pks, child_ta
             all_child_entrylists.extend(c_rel.entrylists)
             child_ref_t_id = c_rel.child_table.reference.id
             if child_ref_t_id in child_table_reference_entrylists:
-                child_table_reference_entrylists[child_ref_t_id].union([e_list.primary_key_value for e_list in c_rel.entrylists]) # duplicates aren't expected anyway since each primary key is unique per table.
+                child_table_reference_entrylists[child_ref_t_id].update([e_list.primary_key_value for e_list in c_rel.entrylists]) # duplicates aren't expected anyway since each primary key is unique per table.
             else:
                 child_table_reference_entrylists[child_ref_t_id] = set([e_list.primary_key_value for e_list in c_rel.entrylists])
 
+        total_rows_deleted = 0
         for child_ref_table_id, pks in child_table_reference_entrylists.items():
             stmt = db.select(TableParameter).where(TableParameter.foreign_key_reference_id == child_ref_table_id)
             grand_children_table_params = db.session.scalars(stmt).all()
             if not grand_children_table_params:
                 continue
-            can_delete = traverse_table_ref_entrylist_child_tables(db, child_ref_table_id, list(pks), grand_children_table_params, recursive_depth, visited_ref_ids)
-
+            can_delete, rows_deleted = traverse_table_ref_entrylist_child_tables(db, child_ref_table_id, list(pks), grand_children_table_params, recursive_depth, visited_ref_ids)
+            total_rows_deleted += rows_deleted
             if not can_delete:
-                return False
+                return False, total_rows_deleted 
 
         # if all ran recursively and no error with can_delete all True, then delete cascade_relationships.
         #   and delete individual entrylist associated with it 
@@ -146,7 +150,8 @@ def traverse_table_ref_entrylist_child_tables(db, fk_ref_table_id, pks, child_ta
         )
         db.session.execute(
             db.delete(EntryList).where(EntryList.id.in_(all_child_entrylist_ids))
-        )      
+        )
+        num_rows_deleted = len(all_child_entrylist_ids) + total_rows_deleted
 
 
     # handle nullable child tables
@@ -178,7 +183,7 @@ def traverse_table_ref_entrylist_child_tables(db, fk_ref_table_id, pks, child_ta
         # send to the db but don't execute yet.
         db.session.execute(update_entry_stmt)
         db.session.execute(delete_rel_stmt)
-    return True
+    return True, num_rows_deleted
     
     
 
@@ -187,7 +192,7 @@ def traverse_table_ref_entrylist_child_tables(db, fk_ref_table_id, pks, child_ta
 
 
 
-def delete_table(db, table):
+def delete_table(db, table, user):
     """
         Deletes table
     """
@@ -195,16 +200,29 @@ def delete_table(db, table):
 
     stmt = db.select(TableParameter).filter_by(foreign_key_reference_id=reference.id)
     child_table_params = db.session.scalars(stmt).all()
-    print("child_table_params", child_table_params)
+    # print("child_table_params", child_table_params)
     try:
         can_delete = traverse_table_reference_child_tables(child_table_params)
-        print("can delete", can_delete)
+        # print("can delete", can_delete)
 
         if can_delete:
             try:
+                
+                table_row_count = db.session.scalar(
+                    db.select(db.func.count(EntryList.id)).where(EntryList.table_id==table.id)
+                )
+
+                db.session.execute(
+                    db.update(UserLimit).where(
+                        UserLimit.user_id == user.id,
+                        UserLimit.current_rows >= table_row_count,
+                        UserLimit.current_tables >= 1
+                    ).values(
+                        current_rows = UserLimit.current_rows - table_row_count, 
+                        current_tables = UserLimit.current_tables - 1
+                    )
+                )
                 db.session.delete(table)
-                stmt = db.update(UserLimit).where(UserLimit.user_id==user.id).values(current_tables=UserLimit.current_tables - 1)
-                db.session.execute(stmt)
                 db.session.commit()
                 return True, None, 204
 
@@ -220,7 +238,7 @@ def delete_table(db, table):
 
 
 
-def delete_API(db, api):
+def delete_API(db, api, user):
     """
         Deletes api.
     """
@@ -242,9 +260,30 @@ def delete_API(db, api):
         
         if can_delete:
             try:
+
+                db.session.execute(
+                    db.select(Table).where(Table.id.in_(table_ids)).order_by(Table.id).with_for_update()
+                ) # temporarily acquire lock on the tables to be deleted to prevent a separate process modifying the tables
+
+                entrylist_count = db.session.scalar(
+                    db.select(db.func.count(EntryList.id)).where(
+                        EntryList.table_id.in_(table_ids)
+                    )   
+                )
+                db.session.execute(
+                    db.update(UserLimit).where(
+                        UserLimit.user_id == user.id,
+                        UserLimit.current_tables >= len(table_ids),
+                        UserLimit.current_rows >= entrylist_count
+                    ).values(
+                        current_tables=UserLimit.current_tables - len(table_ids), 
+                        current_rows=UserLimit.current_rows - entrylist_count)
+                    )
+
+
                 db.session.delete(api)
                 db.session.commit()
-                return True, {"tables": table_ids}, 204
+                return True, None, 204
 
             except Exception as e:
                 print(e)
@@ -257,7 +296,7 @@ def delete_API(db, api):
         print(e)
         return False, "An error occured", 400
 
-def delete_entrylists(db, fk_ref_table_id, entrylists):
+def delete_entrylists(db, fk_ref_table_id, entrylists, user):
     """
         Delete rows from a table.
     """
@@ -268,15 +307,22 @@ def delete_entrylists(db, fk_ref_table_id, entrylists):
 
     try:
         child_table_params = db.session.scalars(stmt).all()
-        print('child_table_params', child_table_params)
+        # print('child_table_params', child_table_params)
         if not child_table_params:
             can_delete = True
         else:
             pks = [entrylist.primary_key_value for entrylist in entrylists]
-            can_delete = traverse_table_ref_entrylist_child_tables(db, fk_ref_table_id, pks, child_table_params)
-
+            can_delete, total_rows_deleted = traverse_table_ref_entrylist_child_tables(db, fk_ref_table_id, pks, child_table_params)
+            print('can delete', can_delete)
         if can_delete:
             try:
+                entrylists_count = len(entrylists) + total_rows_deleted
+                db.session.execute(
+                    db.update(UserLimit).where(
+                            UserLimit.user_id == user.id,
+                            UserLimit.current_rows >= entrylists_count
+                        ).values(current_rows = UserLimit.current_rows - entrylists_count)
+                )
                 e_ids = [entrylist.id for entrylist in entrylists]
                 db.session.execute(db.delete(EntryList).where(EntryList.id.in_(e_ids)))
                 db.session.commit()
@@ -290,8 +336,9 @@ def delete_entrylists(db, fk_ref_table_id, entrylists):
     except RecursionError as e:
         return False, str(e), 409
     except Exception as e:
-        if type(error) == dict and "error" in e:
-            return False, e["error"], 422
         print(e)
+        error = e.args[0]
+        if type(error) == dict and "error" in error:
+            return False, error["error"], 422
         return False, "An error occured", 400
 

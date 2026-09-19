@@ -43,9 +43,7 @@ function Index() {
             })
             // console.log(req, req.statusText)
             const data = await req.json();
-            if (req.status === 401)
-                setStatus({ type: data.status, message: data.message })
-            else if (req.status === 200) {
+            if (req.status === 200) {
                 setStatus({ type: "success", message: "Login Succesful" })
                 Cookies.set('token', data.data, { path: '/', expires: (1) })
                 setTimeout(() => {
@@ -55,6 +53,9 @@ function Index() {
                         navigate('/my_apis')
                 }, 2000)
             }
+            else
+                setStatus({ type: data.status, message: data.message })
+    
         } catch (err) {
             console.log(err)
             setStatus({ type: "error", message: "Sorry!, an error occured, Check your internet connection" })

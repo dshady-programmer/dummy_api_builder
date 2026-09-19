@@ -152,6 +152,8 @@ def table_parameter_constraints_checks(
         # create entries with the latest default values.
         
     if "foreign_key" not in constraints and table_param.foreign_key_reference_id is not None:
+        Relationship.query.filter_by(foreign_key_rel_id=table_param.foreign_key_reference_id,
+                                    child_table_id=table_param.table_id).delete()
         table_param.foreign_key_reference_id = None
         table_param.foreign_key_default_value = None
 
@@ -195,12 +197,13 @@ def check_and_validate_tableparameter(
             # Check if the constraint is valid
             raise Exception({"error": "invalid constraint"})
         if const == "foreign_key":
-            parent_table = foreign_key_ref_table_validator(table_param, param_dt, param, user, validated_fks, entry_present)
+            parent_table, run_validator = foreign_key_ref_table_validator(table_param, param_dt, param, user, validated_fks, entry_present)
             foreign_key_on_delete_validator(table_param, param, constraints) # validate on delete options
             run_update = True
             is_default = "default" in constraints
+
             if entry_present and update:
-                if prev_constraints and "foreign_key" in prev_constraints:
+                if (prev_constraints and "foreign_key" in prev_constraints) and not run_validator:
                     if is_default:
                         """
                         Don't bother running default validator check if the new default value is the same as the old
@@ -314,7 +317,7 @@ def update_table_parameter(param,table, tableparam, tableparam_names, user, entr
     if param_dt and validate_dtType(param_dt):
         if entry_present and tableparam.data_type.name != param_dt and param_dt not in ["string", "text"]:
             raise Exception({"error": f"'{tableparam.name}' table parameter data type can't be changed from {tableparam.data_type.name} to {param_dt} with rows present in the table"})
-        elif entry_present and tableparam.data_type.name != param_dt and "primary_key" in tableparam.constraints:
+        elif entry_present and tableparam.data_type.name != param_dt and "primary_key" in [c.name.value for c in tableparam.constraints]:
             # it affects foreign key relationships.
             # would check if i can improve this..
             raise Exception({"error": "You can't change the data type of a primary key on a table with rows"})
@@ -323,14 +326,19 @@ def update_table_parameter(param,table, tableparam, tableparam_names, user, entr
     if param_dt_length and param_dt in ["string", "text"]:
 
         try:
+
             param_dt_length = abs(int(param_dt_length))
-            if entry_present and tableparam.dataType_length > param_dt_length:
+
+            prev_dt_length = tableparam.dataType_length
+            if entry_present and (prev_dt_length is None or prev_dt_length > param_dt_length):
+                # validate existing values:
                 # If an entry is present compare the new datatype_length with the previous
                 # previous mustn't be greater than new datatype_length
                 # why? because reducing it might mean you might be violating some constraints..
-                # It lazily just prevents you rather than validating each data against the new length which might be extra work
-                raise Exception({"error": "You can't set a new max length to be less than the previous max length, there are already entries in this table"})
-
+                too_long = any(e.value and len(e.value) > param_dt_length for e in tableparam.entries)
+                if too_long:
+                    raise Exception({"error": f"Existing values in '{tableparam.name}' are longer than {param_dt_length}"})
+         
             if not param_dt_length:
                 # In the case of 0 just set it to none..
                 # What good is a field if the max length is 0?
@@ -341,6 +349,9 @@ def update_table_parameter(param,table, tableparam, tableparam_names, user, entr
             tableparam.dataType_length = param_dt_length
         except ValueError:
             pass
+        except TypeError:
+            pass
+
     else:
         tableparam.dataType_length = None
             
@@ -357,10 +368,10 @@ def update_table_parameter(param,table, tableparam, tableparam_names, user, entr
 def delete_table_parameter(table_params):
     for _, table_param in table_params.items():
         table_param.constraints.clear()
-        db.session.delete(table_param) # it should delete all entries 
         fk_ref_table_id = table_param.foreign_key_reference_id
+        db.session.delete(table_param) # it should delete all entries 
         if fk_ref_table_id:
-            Relationship.query.filter_by(foreign_key_rel_id=fk_ref_table_id).delete()
+            Relationship.query.filter_by(foreign_key_rel_id=fk_ref_table_id, child_table_id=table_param.table_id).delete()
 
     ## cache update here too
 

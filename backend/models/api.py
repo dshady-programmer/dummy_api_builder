@@ -23,7 +23,7 @@ class Api(db.Model):
     description = db.Column(db.Text)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='CASCADE'), index=True)
     user = db.relationship('User', back_populates='user_apis')
-    tables = db.relationship('Table', back_populates='api', cascade='all, delete-orphan', passive_deletes=True)
+    tables = db.relationship('Table', back_populates='api', cascade='all, delete-orphan', order_by='Table.id', passive_deletes=True)
 
     __table_args__ = (
         db.UniqueConstraint('user_id', 'name', name='uq_api_name_user_id'),

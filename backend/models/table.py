@@ -34,7 +34,7 @@ class Table(db.Model):
     api = db.relationship('Api', back_populates='tables')
     table_parameters = db.relationship('TableParameter', back_populates='table', cascade="all, delete-orphan", passive_deletes=True)
     reference = db.relationship('ForeignKeyFieldReferenceTable', back_populates='table_reference', cascade='all, delete-orphan', uselist=False, passive_deletes=True)
-    entry_lists = db.relationship('EntryList', back_populates='table', cascade="all, delete-orphan", passive_deletes=True)
+    entry_lists = db.relationship('EntryList', back_populates='table', order_by='EntryList.id', cascade="all, delete-orphan", passive_deletes=True)
     reverse_relationships = db.relationship('Relationship', backref='child_table', cascade="all, delete-orphan", passive_deletes=True)
 
     __table_args__ = (

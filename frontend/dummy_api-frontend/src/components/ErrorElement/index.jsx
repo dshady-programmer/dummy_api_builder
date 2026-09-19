@@ -1,9 +1,11 @@
 import errorImg from "../../assets/errorPage.svg"
+import genericErrorImg from "../../assets/genericErrorPage.svg"
 import "./index.scss"
-const Index = () => {
+const Index = ({notFound = false}) => {
     return (
         <div className="error-element_wrapper">
-            <img src={errorImg} alt="" />
+            
+            <img src={notFound ? errorImg : genericErrorImg} alt="" />
         </div>
     )
 }

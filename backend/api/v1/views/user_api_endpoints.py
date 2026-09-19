@@ -108,7 +108,6 @@ def create_new_api(user):
     db.session.commit()
 
     db.session.rollback()
-    return format_response(status="error", message="Database integrity error occurred", code=400)
     return format_response(data={"id": new_api.id, "name": new_api.name, "desc": new_api.description})
 
 
@@ -152,7 +151,7 @@ def delete_api(user, id):
   
 
     # Safe check there's no foreign key + primary key reference before deletion
-    status, msg, code = delete_API(db, api)
+    status, msg, code = delete_API(db, api, user)
 
     if not status:
         db.session.rollback()
@@ -161,24 +160,4 @@ def delete_api(user, id):
     # list_key = f"{user_cache_namespace(user.id)}:apis"
     # detail_key = f"{api_cache_namespace(user.id, api.id)}:detail"
     # multiple_key_delete([list_key, detail_key])
-
-    db.session.execute(
-        db.select(Table).where(Table.id.in_([tables])).order_by(Table.id).with_for_update()
-    ) # temporarily acquire lock on the tables to be deleted to prevent a separate process modifying the tables
-
-    tables = msg["tables"]
-    entrylist_count_stmt = db.select(db.func.count(EntryList.id)).where(
-        EntryList.table_id.in_(tables)
-    )
-    entrylist_count = db.session.scalar(entrylist_count_stmt)
-
-    db.session.execute(
-        db.update(UserLimit).where(
-            UserLimit.user_id == user.id,
-            UserLimit.current_tables >= len(tables),
-            UserLimit.current_rows >= entrylist_count
-        ).values(current_tables=UserLimit.current_tables - len(tables), 
-                 current_rows=UserLimit.current_rows - entrylist_count)
-    )
-    db.session.commit()
     return format_response(code=code)

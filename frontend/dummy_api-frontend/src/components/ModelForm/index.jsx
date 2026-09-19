@@ -76,7 +76,7 @@ const Index = ({ fList, mParam, endpoint, title, btnTitle, method }) => {
             })
             const data = await res.json()
             // console.log(data)
-            if (res.status == 201) {
+            if (res.status == 201 || res.status == 200) {
                 navigate(`/my_apis/${params.apiId}/model/${data.data.id}`)
             } else {
                 if (res.status == 401) {
@@ -163,8 +163,8 @@ const Index = ({ fList, mParam, endpoint, title, btnTitle, method }) => {
 
                                                         <label htmlFor={`table-level-on-delete-${field}`}>Table Level on Delete</label>
                                                         <select name={`table_level_on_delete-${field}`} id={`table-level-on-delete-${field}`} value={currentTbl_params?.table_level_on_delete || "protect"} onChange={handleChange}>
-                                                            <option value="protect">PROTECT</option>
-                                                            <option value="cascade" disabled={currentTbl_params?.constraints?.includes("primary_key")}>CASCADE</option>
+                                                            <option value="protect" selected={currentTbl_params?.table_level_on_delete === "protect"  ? true : false}>PROTECT</option>
+                                                            <option value="cascade" disabled={currentTbl_params?.constraints?.includes("primary_key")} selected={currentTbl_params?.table_level_on_delete === "cascade" ? true : false}>CASCADE</option>
                                                         </select>
 
                                                     </div>
@@ -172,9 +172,9 @@ const Index = ({ fList, mParam, endpoint, title, btnTitle, method }) => {
 
                                                         <label htmlFor={`row-level-on-delete-${field}`}>Row Level on Delete</label>
                                                         <select name={`row_level_on_delete-${field}`} id={`row-level-on-delete-${field}`} value={currentTbl_params?.row_level_on_delete || "protect"} onChange={handleChange}>
-                                                            <option value="protect">PROTECT</option>
-                                                            <option value="cascade">CASCADE</option>
-                                                            <option value="set_null" disabled={!currentTbl_params?.constraints?.includes("nullable")}>SET_NULL</option>
+                                                            <option value="protect" selected={currentTbl_params?.row_level_on_delete === "protect"  ? true : false}>PROTECT</option>
+                                                            <option value="cascade" selected={currentTbl_params?.row_level_on_delete === "cascade"  ? true : false}>CASCADE</option>
+                                                            <option value="set_null" disabled={!currentTbl_params?.constraints?.includes("nullable")} selected={currentTbl_params?.row_level_on_delete === "set_null"  ? true : false}>SET_NULL</option>
                                                         </select>
                                                     </div>
                                                 </>
@@ -190,13 +190,21 @@ const Index = ({ fList, mParam, endpoint, title, btnTitle, method }) => {
                                                         <input type="text" id={`field-default-${field}`} name={`default_value-${field}`} placeholder="default" value={currentTbl_params?.default_value || ""} onChange={handleChange} />
                                                     </div>
                                                     <div>
-                                                        <small><b>Note: </b> &nbsp;If you select primary key and default constraint it will autogenerate keys for your model depending on the data type</small>
+                                                        <b>Note: </b>
                                                     </div>
-                                                    <div>
-                                                        <small>For string/text data types primary key default values would be uuid regardless of the length constraint field length constraint would only validate on user passed pk values</small>
-                                                    </div>
-                                                    <div>
-                                                        <small>For date and datetimes use <em>created</em> to set the default value to the current date and time on creation, any other non-date value including empty strings defaults to <em>updated_at</em> timestamp</small>
+                                                    <div style={{padding: "0 20px 0 50px"}}>
+
+                                                        <ul>
+                                                            <li>
+                                                                <small>If you select primary key and default constraint it will autogenerate keys for your model depending on the data type</small>
+                                                            </li>
+                                                            <li>
+                                                                <small>For string/text data types primary key default values would be uuid regardless of the length constraint field length constraint would only validate on user passed pk values</small>
+                                                            </li>
+                                                            <li>
+                                                                <small>For date and datetimes use <em>created</em> to set the default value to the current date and time on creation, any other non-date value including empty strings defaults to <em>updated_at</em> timestamp</small>
+                                                            </li>
+                                                        </ul>
                                                     </div>
                                                 </>
                                             )

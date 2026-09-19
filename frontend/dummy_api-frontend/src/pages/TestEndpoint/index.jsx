@@ -1,5 +1,5 @@
 import "./index.scss"
-import { useState, useContext, useCallback } from "react"
+import { useState, useContext, useCallback, useEffect } from "react"
 import { endpointPrefix } from "../../variables";
 import { AppContext } from "../../context";
 import CodeMirror from '@uiw/react-codemirror';
@@ -9,10 +9,15 @@ import {json} from "@codemirror/lang-json"
 // hostUrl / api / v1 / <your_api_Id>/my_api/<Api_name>/model/<Model_name>/<optional:model_id></optional:model_id>
 
 const Index = () => {
-    const [endpointParam, setEndpointParam] = useState({ "method": "GET", "data": "", "api": "", "model": "", "model_id": "", "query_params": "" });
+    const [endpointParam, setEndpointParam] = useState({ method: "GET", data: "", api: "", model: "", model_id: "", query_params: "" });
     const [response, setResponse] = useState(null)
     const [responseStatus, setResponseStatus] = useState(null)
-    const { user } = useContext(AppContext)
+    const { apiDetail, user } = useContext(AppContext)
+
+    useEffect(()=> {
+        if (apiDetail)
+            setEndpointParam((prev) => ({...prev, api: apiDetail.name}))
+    }, [apiDetail])
 
     const copyTextToClipboard = async (text) => {
         if ('clipboard' in navigator) {
@@ -47,20 +52,28 @@ const Index = () => {
     const handleSubmit = async (e) => {
 
         e.preventDefault()
-        console.log("endpointParam", endpointParam)
+        // console.log("endpointParam", endpointParam)
         setResponse(null)
         setResponseStatus(null)
         if (!endpointParam.api || !endpointParam.model) {
-            
+            alert('provide both the api and model to query')
             return;
         }
         let fullUrlPath = `${endpointPrefix}${user.api_token}/my_api/${endpointParam.api}/model/${endpointParam.model}/${endpointParam.model_id}`
         if (["POST", "PUT"].includes(endpointParam.method)) {
 
-            if (!endpointParam.data) return;
-            try {
-                const data = JSON.parse(endpointParam.data.trim())
 
+
+            try {
+                let data;
+                if (!endpointParam.data){
+
+                    setEndpointParam(prev => ({...prev, data: "{}"}))
+                    data = {}
+                }
+                else
+                    data = JSON.parse(endpointParam.data.trim())
+                console.log('data', endpointParam)
                 const resp = await fetch(fullUrlPath, {
                     method: endpointParam.method,
                     headers: {
@@ -70,6 +83,12 @@ const Index = () => {
                         "entries": data
                     })
                 })
+                // console.log("resp", resp)
+                if (resp.status == 405) {
+                    setResponseStatus(resp.status)
+                    setResponse(await resp.text())
+                    return
+                }
                 const resp_data = await resp.json()
                 setResponseStatus(resp.status)
                 setResponse(resp_data)
@@ -94,6 +113,7 @@ const Index = () => {
                 const resp_data = await resp.json()
 
                 setResponse(resp_data)
+                setResponseStatus(resp.status)
             }
             catch (err) {
                 setResponse(err)
@@ -102,6 +122,7 @@ const Index = () => {
 
 
     }
+
     return (
         <div className="test_endpoint-wrapper">
             <h2>Test Your API</h2>
@@ -143,7 +164,7 @@ const Index = () => {
                             <option value="DELETE">DELETE</option>
                         </select>
                     </div>
-                    <div style={"height:250px;"}>
+                    <div style={{height: "250px;"}}>
                         <label htmlFor="data">Data</label>
                         <CodeMirror name="data" id="data" value={endpointParam.data} height="200px" extensions={[json()]} onChange={handleDataChange} />
                         {/* <textarea name="data" id="data" onChange={handleChange} value={endpointParam.data}></textarea> */}
@@ -157,7 +178,7 @@ const Index = () => {
             {
                 response && <section className="response_section">
                     <h2>Response</h2>
-                    {responseStatus && <p style={`color: ${responseStatus < 300 ? "green" : "red"}`}>Status: {responseStatus}</p>}
+                    {responseStatus && <p  style={{color: `${responseStatus < 300 ? "green" : "red"}`, fontSize: "17px"}}>Status: {responseStatus}</p>}
                     <div className="response_data">
                         <pre>
                             {JSON.stringify(response, undefined, 3)}

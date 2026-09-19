@@ -11,7 +11,7 @@ const Index = () => {
     const token = Cookies.get("token", { path: '/' })
     const params = useParams()
     const navigate = useNavigate();
-    const { setInvalidate, loading, fetchApiDetail, apiDetail, apiDetailNotFound } = useContext(AppContext)
+    const { setInvalidate, apiDetailLoading, fetchApiDetail, apiDetail, apiDetailNotFound } = useContext(AppContext)
     
     const deleteAPI = async () => {
         const confirmDelete = confirm("Are you sure you want to delete this API? This action cannot be undone.")
@@ -25,7 +25,7 @@ const Index = () => {
                                 })
         if (res.status === 204) {
             setInvalidate(true)
-        } else if (res.status === 400) {
+        } else if (res.status >= 400) {
             const msg = await res.json()
             alert(msg.message || "An error occurred while deleting the API.")
             return
@@ -35,12 +35,14 @@ const Index = () => {
 
 
     useEffect(() => {
-        let cancelled = false
-        fetchApiDetail(params.apiId, cancelled)
-        return () => cancelled = true
+        // console.log('loading here.....', loading)
+        const controller = new AbortController();
+
+        fetchApiDetail(params.apiId, controller.signal)
+        return () => controller.abort() // automatically cancels the fetch and triggers abort error
     }, [params.apiId, fetchApiDetail])
 
-    if (loading) {
+    if (apiDetailLoading) {
         return <div className="loading-wrapper">
 
             <Bars
@@ -58,7 +60,7 @@ const Index = () => {
     return (
         <div className="detail-wrapper">
             {
-                (!loading && !apiDetail) || (!loading && apiDetailNotFound) ? <ErrorElement /> :
+                (!apiDetailLoading && !apiDetail) ? <ErrorElement /> :  (!apiDetailLoading && apiDetailNotFound) ? <ErrorElement notFound={true}/> :
                     <>
                         <section className="detail_header">
                             <h2>{apiDetail?.name}</h2>

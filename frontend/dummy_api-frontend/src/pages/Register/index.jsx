@@ -50,15 +50,14 @@ const Index = () => {
             // console.log(req, req.statusText)
             const data = await req.json();
             console.log(data, req.status)
-            if (req.status === 401)
-                setStatus({ type: data.status, message: data.message})
-            else if (req.status === 202)
-                setStatus({ type: data.status, message: data.message })
-            else if (req.status === 201) {
+    
+            if (req.status === 201) {
                 setStatus({ type: data.status, message: data.message })
                 setTimeout(() => {
                     navigate('/login')
                 }, 3000)
+            } else {
+                setStatus({ type: data.status, message: data.message})
             }
         } catch (err) {
             setStatus({ type: "error", message: "Something went wrong" })

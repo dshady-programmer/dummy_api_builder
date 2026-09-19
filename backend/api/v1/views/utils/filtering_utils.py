@@ -112,6 +112,8 @@ def filter_validation(tp_name, datatype, value, check_value):
                     return ev_val == ev_check_val
             elif datatype == "integer":
                 return int(check_value) == int(value)
+            elif datatype == "decimal":
+                return float(check_value) == float(value)
             return check_value == value
     except:
         return False

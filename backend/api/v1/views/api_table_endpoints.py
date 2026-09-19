@@ -41,9 +41,6 @@ def create_model(user, api_id):
 
 
     # Check if user is allowed to create more tables.
-    tables_count = db.session.scalar(db.select(UserLimit.current_tables).where(UserLimit.user_id==user.id))
-    if tables_count > MAX_TABLE_FOR_USER:
-        return format_response(status="error", message="Maximum number of allowable tables reached. Delete existing tables to create a new one", code=403)
 
     # Atleast one table parameter is required
     # Tableparameter refers to the model fields (like name = string() etc..)
@@ -62,6 +59,11 @@ def create_model(user, api_id):
     table = db.session.scalar(table_stmt)
     if table:
         return format_response(status="error", message="Table already exists", code=400)
+
+    tables_count = db.session.scalar(db.select(UserLimit.current_tables).where(UserLimit.user_id==user.id))
+    if tables_count >= MAX_TABLE_FOR_USER:
+        return format_response(status="error", message="Maximum number of allowable tables reached. Delete existing tables to create a new one", code=403)
+
     
     if not validate_name(name):
         return format_response(status="error", message="Table name must be a valid python identifier, not a python keyword and must be atleast 3 letters", code=400)
@@ -92,15 +94,21 @@ def update_model(user, api_id, model_id):
     if not api:
         return format_response(status="error", message="no api of such is associated with the user", code=400)
 
-    table_stmt = db.select(Table).filter_by(id=model_id, api_id=api_id)\
-                                                .options(selectinload(Table.table_parameters)\
-                                                .selectinload(TableParameter.constraints),
-                                                selectinload(Table.table_parameters)\
-                                                .joinedload(TableParameter.foreign_key_reference_table),
-                                                selectinload(Table.table_parameters).selectinload(TableParameter.entries)\
-                                                    .joinedload(Entry.entry_list)
+    table_stmt = (
+                    db.select(Table)
+                    .filter_by(
+                        id=model_id, api_id=api_id)
+                        .options(
+                            selectinload(Table.table_parameters)
+                                .selectinload(TableParameter.constraints),
+                            selectinload(Table.table_parameters)
+                                .joinedload(TableParameter.foreign_key_reference_table),
+                            selectinload(Table.table_parameters)
+                                .selectinload(TableParameter.entries)
+                                    .joinedload(Entry.entry_list)
 
-                                                ).with_for_update()
+                        ).with_for_update()
+                )
     table = db.session.scalar(table_stmt)
 
     if not table:
@@ -151,14 +159,21 @@ def show_model(user, api_id, model_id):
     #     if cache_num_of_entries is not None and cache_num_of_entries != cached_data["number_of_entries"]:
     #         cached_data['number_of_entries'] = cache_num_of_entries
     #     return jsonify(cached_data), 200
-    api_stmt = db.select(db.exists().where(Api.id == api_id, Api.user_id == user.id))
+    api_stmt = db.select(Api).where(Api.id == api_id, Api.user_id == user.id)
     api = db.session.scalar(api_stmt)
     if not api:
         return format_response(status="error", message="no api of such is associated with the user", code=404) 
-    table_stmt = db.select(Table).filter_by(id=model_id, api_id=api_id)\
-                                            .options(selectinload(Table.table_parameters)\
-                                            .selectinload(TableParameter.constraints)\
-                                            .joinedload(TableParameter.foreign_key_default_value))
+    table_stmt =(
+                db.select(Table)
+                .filter_by(
+                    id=model_id, api_id=api_id)
+                    .options(
+                        selectinload(Table.table_parameters)
+                            .selectinload(TableParameter.constraints),
+                        selectinload(Table.table_parameters)
+                            .joinedload(TableParameter.foreign_key_default_value)
+                    )
+            )
     table = db.session.scalar(table_stmt)
     if not table:
         return format_response(status="error", message="Table doesn't exist", code=404) 
@@ -175,10 +190,14 @@ def show_model(user, api_id, model_id):
             foreign_key_ref = f"{ref_table.table_reference.api.name}.{ref_table.table_reference.name}"
             if param.foreign_key_default_value and param_default_value != param.foreign_key_default_value.primary_key_value:
                 param_default_value = param.foreign_key_default_value.primary_key_value
+                param.default_value = param_default_value
                 updated=True
             elif not param.foreign_key_default_value:
                 param_default_value = None
-                updated=True 
+                if param.default_value is not None:
+                    param.default_value = param_default_value
+                    updated = True
+                
             
             
 
@@ -190,7 +209,9 @@ def show_model(user, api_id, model_id):
             "dt_length": param.dataType_length,
             "default_value": param_default_value, 
             "foreign_key_rf": foreign_key_ref,
-            "constraints": tbl_constraints
+            "constraints": tbl_constraints,
+            "row_level_on_delete": param.row_level_on_delete.name,
+            "table_level_on_delete": param.table_level_on_delete.name
         })
     num_of_entries = db.session.scalar(
             db.select(db.func.count())
@@ -230,12 +251,9 @@ def delete_model(user, api_id, model_id):
         return format_response(status="error", message= "Table doesn't exist", code=404)
 
 
-    table_row_count = db.session.scalar(
-        db.select(db.func.count(EntryList.id)).where(EntryList.table_id==t.id)
-    )
 
     # delete table but with a check on relationships
-    status, msg, code = delete_table(db, t)
+    status, msg, code = delete_table(db, t, user)
     if not status:
         db.session.rollback()
         return format_response(status="error", message=msg, code=code)
@@ -245,19 +263,6 @@ def delete_model(user, api_id, model_id):
     # num_entries = f"{api_cache_namespace(user.id, api_id)}:model:{t.id}:num_of_entries"
     # api_cache_key = f"{api_cache_namespace(user.id, api_id)}:detail"
     # multiple_key_delete([table_cache_key, num_entries, api_cache_key])
-    
-
-    db.session.execute(
-        db.update(UserLimit).where(
-            UserLimit.user_id == user.id,
-            UserLimit.current_rows >= table_row_count,
-            UserLimit.current_tables >= 1
-        ).values(
-            current_rows = UserLimit.current_rows - table_row_count, 
-            current_tables = UserLimit.current_tables - 1
-        )
-    )
-    db.session.commit()
    
     return format_response(code=code)
 
@@ -280,25 +285,20 @@ def truncate_model(user, api_id, model_id):
         return format_response(status="error", message="Table doesn't exist", code=400)
 
 
-    entrylists_count = db.session.scalar(
-        db.select(db.func.count(EntryList.id)).where(EntryList.table_id==t.id)
-    )
+
+    entrylists = db.session.scalars(
+        db.select(EntryList).where(EntryList.table_id==t.id)
+        .with_for_update()
+    ).all()
 
 
 
-    status, msg, code = delete_entrylists(db, t.reference.id, entrylists)
+    status, msg, code = delete_entrylists(db, t.reference.id, entrylists, user)
 
     if status:
         # num_entries = f"{api_cache_namespace(user.id, api_id)}:model:{model_id}:num_of_entries"
         # set_cache(num_entries, 0)
 
-        db.session.execute(
-            db.update(UserLimit).where(
-                    UserLimit.user_id == user.id,
-                    UserLimit.current_rows >= entrylists_count
-                ).values(current_rows = UserLimit.current_rows - entrylists_count)
-        )
-        db.session.commit()
         return format_response(code=code)
     else:
         db.session.rollback()

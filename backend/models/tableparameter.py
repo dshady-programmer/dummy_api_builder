@@ -97,7 +97,7 @@ class TableParameter(db.Model):
     default_value = db.Column(db.Text, nullable=True) # for default values
 
     foreign_key_default_value_id = db.Column(db.Integer, db.ForeignKey('entrylist.id', ondelete='SET NULL'), nullable=True) # if field has a foreign key constraint and default value
-    foreign_key_default_value = db.relationship('Entrylist', back_populates="table_param_defaults")
+    foreign_key_default_value = db.relationship('EntryList', back_populates="table_param_defaults")
 
     table_id = db.Column(db.Integer, db.ForeignKey('table.id', ondelete='CASCADE'), index=True)
     table = db.relationship('Table', back_populates='table_parameters')

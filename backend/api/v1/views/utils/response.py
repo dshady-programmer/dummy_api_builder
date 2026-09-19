@@ -5,7 +5,7 @@ def format_response(status="success", message=None, data=None, code=200, format_
     if message:
         response['message'] = message
 
-    if data:
+    if data is not None:
         response['data'] = data
 
     if format_json:

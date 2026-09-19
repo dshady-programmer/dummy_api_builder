@@ -36,7 +36,7 @@ class Entry(db.Model):
     tableparameter_id = db.Column(db.Integer, db.ForeignKey('tableparameter.id', ondelete='CASCADE'), index=True)
     tableparameter = db.relationship('TableParameter', back_populates='entries')
     entry_list_id = db.Column(db.Integer, db.ForeignKey('entrylist.id', ondelete='CASCADE'), index=True)
-    entry_list = db.relationship('EntryList', back_populates='entries')
+    entry_list = db.relationship('EntryList', back_populates='entries', foreign_keys=[entry_list_id])
 
     fk_entry_list_id = db.Column(db.Integer, db.ForeignKey('entrylist.id', ondelete='SET NULL'), nullable=True, index=True)
     __table_args__ = (

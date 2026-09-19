@@ -57,8 +57,8 @@ def add_list_entry(api_token, api_name, model_name):
         db.select(Table).filter_by(name=model_name, api_id=api.id)
         .options(
                     selectinload(Table.table_parameters).selectinload(TableParameter.constraints),
-                    selectinload(Table.table_parameters).joinedload(TableParameter.foreign_key_reference_table)
-                                                    .joinedload(TableParameter.foreign_key_default_value)
+                    selectinload(Table.table_parameters).joinedload(TableParameter.foreign_key_reference_table),
+                    selectinload(Table.table_parameters).joinedload(TableParameter.foreign_key_default_value)
                 )
         .with_for_update()
     )
@@ -112,12 +112,17 @@ def add_list_entry(api_token, api_name, model_name):
         cached_parameters = {}
         cached_primary_key_fields = set()
         cached_default_pk_fields = {}
+
         if type(entries) == dict:
             response = create_entry(
                         table, entries, 
                         tracked_pks, 
                         tracked_unique_values,
                         tracked_fk_values, 
+                        cached_required_parameters,
+                        cached_parameters,
+                        cached_primary_key_fields,
+                        cached_default_pk_fields
                     )
             
             if 'error' in response:
@@ -127,7 +132,8 @@ def add_list_entry(api_token, api_name, model_name):
             db.session.commit()
             # set_cache(no_of_entries_key, row.current_rows)
             # executor_thread.submit(update_entry_list_cache_on_add_new_entries, list_cache_key, [response])
-            return format_response(data=response), 201
+            # print("got here", response)
+            return format_response(data=response, code=201)
         else:
             responses = []
             errors = []
@@ -156,7 +162,7 @@ def add_list_entry(api_token, api_name, model_name):
 
             # for bulk write check that any of the primary keys do not exist in the database.
             pk_exist_stmt = db.select(db.exists().where(EntryList.table_id==table.id, EntryList.primary_key_value.in_(tracked_pks)))
-            pk_exist = db.scalar(pk_exist_stmt)
+            pk_exist = db.session.scalar(pk_exist_stmt)
             if pk_exist:
                 db.session.rollback() # all or nothing here
                 return format_response(status="error", message="Integrity Error: One of the primary keys already exist in the database", code=409)
@@ -168,8 +174,8 @@ def add_list_entry(api_token, api_name, model_name):
             # if row is not None:
             #     set_cache(no_of_entries_key, row.current_rows) 
             try:
-                successful_entries = num_of_responses - num_of_errors
-                user_limit.current_rows += successful_entries
+               
+                user_limit.current_rows += num_of_responses
                 db.session.commit()
             except Exception as e:
                 db.session.rollback()
@@ -220,16 +226,20 @@ def update_delete_retrieve_entry(api_token, api_name, model_name, model_id):
     if not api:
         return format_response(status="error", message=f"{api_name} does not exist in the user's catalog", code=400)
     
-    table_stmt_put = db.select(Table).filter_by(name=model_name, api_id=api.id)\
-        .options(joinedload(Table.reference),
-                selectinload(Table.table_parameters).selectinload(TableParameter.constraints),
-                 selectinload(Table.table_parameters).joinedload(TableParameter.foreign_key_reference_table))\
-        .with_for_update()
+    table_stmt_put = (
 
+            db.select(Table).filter_by(name=model_name, api_id=api.id)
+            .options(
+                    joinedload(Table.reference),
+                    selectinload(Table.table_parameters).selectinload(TableParameter.constraints),
+                    selectinload(Table.table_parameters).joinedload(TableParameter.foreign_key_reference_table)
+                )
+            .with_for_update(of=Table)
+        )
     table_stmt_default = db.select(Table).filter_by(name=model_name, api_id=api.id)\
                         .options(joinedload(Table.reference))
 
-    table_stmt = table_stmt_put if request.method == "PUT" else table_stmt_default.with_for_update() if request.method == "DELETE" else table_stmt_default
+    table_stmt = table_stmt_put if request.method == "PUT" else table_stmt_default.with_for_update(of=Table) if request.method == "DELETE" else table_stmt_default
     table = db.session.scalar(table_stmt)
     if not table:
         return format_response(status="error", message=f"model {model_name} doesn't exist in the api", code=400)
@@ -269,14 +279,8 @@ def update_delete_retrieve_entry(api_token, api_name, model_name, model_id):
 
 
     if request.method == "DELETE":
-        status, msg, code = delete_entrylists(db, fk_ref_table.id, [e_list])
+        status, msg, code = delete_entrylists(db, fk_ref_table.id, [e_list], user)
         if status:
-            user_rows_update_stmt = db.update(UserLimit).where(
-                            UserLimit.user_id == user.id,
-                            UserLimit.current_rows > 0
-                        ).values(current_rows = UserLimit.current_rows - 1)
-            db.session.execute(user_rows_update_stmt)
-            db.session.commit()
             return format_response(code=code, message="Entry succesfully deleted")
 
         else:
@@ -290,11 +294,15 @@ def update_delete_retrieve_entry(api_token, api_name, model_name, model_id):
         #     return jsonify(cached_data)
         try:
             data = {}
+
+            detail = {}
             for data_entry in e_list.entries:
                 fieldName = data_entry.tableparameter.name
-                data[fieldName] = parse_value(data_entry.tableparameter, data_entry.value)
+                detail[fieldName] = parse_value(data_entry.tableparameter, data_entry.value)
             # rel_key = db.session(Relationship).filter(Relationship.fk_rel.like(f"{tableKeyName}%"), Relationship.entry_ref_pk=e_list.primary_key_value).first()
-            
+            data['detail'] = detail
+
+
             rel_stmt = db.select(Relationship).filter_by(
                 entry_ref_pk=e_list.primary_key_value, 
                 foreign_key_rel_id=fk_ref_table.id)\
@@ -303,13 +311,13 @@ def update_delete_retrieve_entry(api_token, api_name, model_name, model_id):
                     joinedload(Relationship.child_table).joinedload(Table.api)
                 )
             rels = db.session.scalars(rel_stmt).all()
-            rel_key_data = {} # format {"posts":[..]}
+            rel_key_data = {} # format {"post_set":[..]}
         
 
             
             for rel in rels:
                 # child_tables.append(rel.child_table)
-                fk_rel_name = f"{rel.child_table.api.name.lower()}_{rel.child_table.name.lower()}s"
+                fk_rel_name = f"{rel.child_table.api.name.lower()}_{rel.child_table.name.lower()}_set"
                 rel_key_data[fk_rel_name] = []
                 for e_list_rel in rel.entrylists:
                     rel_data = {ent.tableparameter.name: parse_value(ent.tableparameter, ent.value) for ent in e_list_rel.entries}

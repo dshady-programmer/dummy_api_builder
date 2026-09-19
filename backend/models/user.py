@@ -29,9 +29,9 @@ class User(db.Model):
     public_id = db.Column(db.String(64), unique=True, nullable=True)
     last_public_id_created = db.Column(db.DateTime, nullable=True)
     email = db.Column(db.String(100), unique=True, nullable=False)
-    api_token = db.Column(db.String(100), unique=True)
-    password = db.Column(db.String(100), nullable=False)
-    user_apis = db.relationship('Api', back_populates='user', cascade="all, delete-orphan", passive_deletes=True)
+    api_token = db.Column(db.String(255), unique=True)
+    password = db.Column(db.String(255), nullable=False)
+    user_apis = db.relationship('Api', back_populates='user', cascade="all, delete-orphan", order_by="Api.id", passive_deletes=True)
     user_limit_ref = db.relationship('UserLimit', back_populates='user_ref', uselist=False, cascade="all, delete-orphan", passive_deletes=True)
     
     __table_args__ = {'sqlite_autoincrement': True}  # Ensure that the id is always incremented and not reused after deletion
@@ -64,6 +64,8 @@ class UserLimit(db.Model):
     __table_args__ = (
         CheckConstraint(f'current_rows <= {MAX_ROW_FOR_USER}', name='check_current_rows_not_exceed_max_rows'),
         CheckConstraint(f'current_tables <= {MAX_TABLE_FOR_USER}', name='check_current_tables_not_exceed_max_tables'),
+        CheckConstraint(f'current_rows >= 0', name='check_current_rows_not_negative'),
+        CheckConstraint(f'current_tables >= 0', name='check_current_tables_not_negative'),
         {'sqlite_autoincrement': True}
     )
 

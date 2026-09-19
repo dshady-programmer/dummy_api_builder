@@ -18,9 +18,10 @@ import jwt
 @exception_handler
 def signup():
 
-    data = request.get_json()
-    if not data:
-        print("error")
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return format_response(status="error", message="Request body must be a JSON object", code=400)
+
     email = data.get("email")
     password = data.get("password")
     confirm_password = data.get("confirm_password")
@@ -54,7 +55,11 @@ def signup():
 @app_views.route("/login", methods=["POST"])
 @exception_handler
 def login():
-    credentials = request.get_json()
+    credentials = request.get_json(silent=True)
+
+    if not isinstance(credentials, dict):
+        return format_response(status="error", message="Request body must be a JSON object", code=400)
+
     email = credentials.get("email")
     password = credentials.get("password")
     # print("email and password", email, password)

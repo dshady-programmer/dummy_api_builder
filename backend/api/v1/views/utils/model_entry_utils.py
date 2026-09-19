@@ -8,10 +8,12 @@ from sqlalchemy.orm import selectinload
 from .parsers import datetime_repr, datetime_parse
 from .filtering_utils import generate_suffixes
 import datetime
+import math
 
 
 
-def validate_create_fk_relationships(tbl_p, entry_value, tracked_fk_values, e_list, stat, err_msg):
+
+def validate_create_fk_relationships(tbl_p, entry_value, tracked_fk_values, e_list, update, e, stat, err_msg):
 
     rel_id = tbl_p.foreign_key_reference_id
     child_table_id = tbl_p.table_id
@@ -22,18 +24,43 @@ def validate_create_fk_relationships(tbl_p, entry_value, tracked_fk_values, e_li
         try:
             rel_key = f"{rel_id}-{entry_value}"
             if rel_key in tracked_fk_values["relationships"]:
-                relationship = tracked_fk_values["relationship"][rel_key]
+                relationship = tracked_fk_values["relationships"][rel_key]
             else:
                 relationship = db.session.scalar(
                     db.select(Relationship).filter_by(foreign_key_rel_id = rel_id, entry_ref_pk = entry_value, child_table_id=child_table_id)
+                    .options(selectinload(Relationship.entrylists))
                 )
                 if not relationship:
                     relationship = Relationship(entry_ref_pk=entry_value, foreign_key_rel_id=rel_id, child_table_id=child_table_id)
                     db.session.add(relationship)
                     # parent_table = tbl_p.foreign_key_reference_table.table_reference
                     # invalidate_user_cache_api(None, parent_table.api_id, parent_table.name , []) # invalidate the parent table cache for new relationships.. (old relationships would already be tracked)
-                tracked_fk_values["relationship"][rel_key] = relationship
-            relationship.entrylists.append(e_list)
+                tracked_fk_values["relationships"][rel_key] = relationship
+
+            if update and e is not None:
+                prev_value = e.value # grab previous value and check if there's a relationship.
+                old_rel_key = f"{rel_id}-{prev_value}"
+
+                if prev_value != entry_value:
+                    if old_rel_key in tracked_fk_values["relationships"]:
+                        old_relationship = tracked_fk_values["relationships"][old_rel_key]
+                    else:
+                        old_relationship = db.session.scalar(
+                            db.select(Relationship).filter_by(entry_ref_pk=prev_value, foreign_key_rel_id=rel_id, child_table_id=child_table_id)
+                            .options(selectinload(Relationship.entrylists))
+                        )
+                    if old_relationship and e_list in old_relationship.entrylists:
+                        old_relationship.entrylists.remove(e_list)
+                    # add old relationships to tracked_fk_values relationships
+                    tracked_fk_values["relationships"][old_rel_key] = old_relationship
+
+            if e_list not in relationship.entrylists:
+                relationship.entrylists.append(e_list)
+
+            if entry_value in tracked_fk_values['values']:
+                # update fk_entry_list_id to the parent entrylist
+                e.fk_entry_list_id = tracked_fk_values['values'][entry_value].id
+
             return relationship
         except:
             raise Exception({"error": "Could not reference the foreign key id"})
@@ -42,25 +69,43 @@ def validate_create_fk_relationships(tbl_p, entry_value, tracked_fk_values, e_li
 
 def validate_create_update_entry_items(
         entry, parameters, e_list, table, 
-        primary_key_fields, tracked_pks=set(), 
-        tracked_unique_values={}, 
-        tracked_fk_values={"relationships": {}, "values": {}}, 
+        primary_key_fields, tracked_pks=None, 
+        tracked_unique_values=None, 
+        tracked_fk_values=None, 
         update=False,
         bulk=False
     ):
-    
+    if tracked_pks is None:
+        tracked_pks = set()
+    if tracked_unique_values is None:
+        tracked_unique_values = {}
+    if tracked_fk_values is None:
+        tracked_fk_values = {"relationships": {}, "values": {}}
     primary_keys = []
     tracked_changes = []
     pending_unique_changes = {}
     validated_entry_state = {}
     for entry_name, entry_value in entry.items():
+
         if entry_name not in parameters:
             if update:
                 continue
             raise Exception({"error": f"such field name '{entry_name}' doesn't exist"})
         tbl_p = parameters[entry_name]
+
+        e = None
+        if update:
+            
+            e = db.session.scalar(
+                    db.select(Entry).filter_by(tableparameter_id=tbl_p.id, entry_list_id=e_list.id)
+                ) # Grab the entry to be updated
+
+            tracked_changes.append(e)
+            
+
         if type(entry_value) == str:
-            entry_value = entry_value.strip()
+            entry_value = html_clean_value(entry_values.strip()) # clean html value to avoid xss attacks with the exception of None values which is acceptable
+
         stat, const_type, err_msg, default_return_value = validate_entry_constraints(entry_value, tbl_p, tracked_unique_values, tracked_fk_values) # Validating the entry against the existing constraint
         if const_type == "default" and stat:
             entry_value = default_return_value # set default value
@@ -79,7 +124,7 @@ def validate_create_update_entry_items(
         if const_type == "fk" or const_type == "default_fk":
             if const_type == "default_fk":
                 entry_value = default_return_value
-            rel = validate_create_fk_relationships(tbl_p, entry_value, tracked_fk_values, e_list, stat, err_msg)
+            rel = validate_create_fk_relationships(tbl_p, entry_value, tracked_fk_values, e_list, update, e, stat, err_msg)
             tracked_changes.append(rel)
         else:
             if not stat and const_type == "uniq":
@@ -88,11 +133,11 @@ def validate_create_update_entry_items(
                 pending_unique_changes[tbl_p.id] = entry_value
 
             if entry_value and not validate_entry_value(entry_value, tbl_p.data_type.name):
+                # print(entry_value)
                 raise Exception({"error": "Wrong data type passed."})
             
             if entry_value and not validate_entry_value_length(entry_value, tbl_p.data_type.name, tbl_p.dataType_length):
                 raise Exception({"error": f"max length of '{entry_name}' exceeded"})
-        entry_value = html_clean_value(entry_value) if entry_value is not None else entry_value # clean html value to avoid xss attacks with the exception of None values which is acceptable
         if tbl_p.primary_key:
             if entry_value is None:
                 # Not technically going to reach this point just an extra / redundant safeguard
@@ -100,23 +145,16 @@ def validate_create_update_entry_items(
             primary_keys.append({"id": tbl_p.id, "value": entry_value})
         if tbl_p.data_type.name == "datetime" or tbl_p.data_type.name == "date":
             entry_value = datetime_repr(entry_value, tbl_p.data_type.name) if entry_value is not None else entry_value
-        e = None
-        if update:
-            
-            e = db.session.scalar(
-                    db.select(Entry).filter_by(tableparameter_id=tbl_p.id, entry_list_id=e_list.id)
-                ) # Grab the entry to be updated
-            if e:
-                e.value = entry_value
-            tracked_changes.append(e)
+
 
 
         if not e:
             e = Entry(value=entry_value, tableparameter_id=tbl_p.id)
             e_list.entries.append(e)
+        else:
+            e.value = entry_value
 
-        if entry_value in tracked_fk_values['values']:
-            e.fk_entry_list_id = tracked_fk_values['values'][entry_value].id
+
 
         parameters.pop(entry_name) # remove already processed entry_name
 
@@ -136,8 +174,7 @@ def validate_create_update_entry_items(
         # check if primary key already exists
 
 
-        
-        if primary_key_value in tracked_pks or (not bulk and db.session.scalar(
+        if primary_key_value != e_list.primary_key_value and primary_key_value in tracked_pks or (not bulk and db.session.scalar(
                 db.select(EntryList).filter_by(table_id=table.id, primary_key_value=primary_key_value)
             )): # for bulk write do the pk db check after, querying the database for each iteration can be expensive. O(n) network calls.
             raise Exception({"error": "Primary key already exist"})
@@ -147,7 +184,7 @@ def validate_create_update_entry_items(
         if update:
 
             is_referenced = db.session.scalar(
-                db.exists().where(Entry.fk_entry_list_id == e_list.id)
+                db.select(db.exists().where(Entry.fk_entry_list_id == e_list.id))
             )
             # Don't update primary key values that has other entries depending on it via foreign key
             if is_referenced:          
@@ -166,10 +203,10 @@ def validate_create_update_entry_items(
 def create_entry(table, entry, tracked_pks, 
                  tracked_unique_values, 
                  tracked_fk_values,
-                 cached_required_parameters=[], 
-                 cached_parameters={}, 
-                 cached_primary_key_fields=set(),
-                 cached_default_pk_fields={},
+                 cached_required_parameters, 
+                 cached_parameters, 
+                 cached_primary_key_fields,
+                 cached_default_pk_fields,
                  bulk=False
                  ):
 
@@ -190,21 +227,23 @@ def create_entry(table, entry, tracked_pks,
             parameters[table_parameter.name] = table_parameter
             cached_parameters[table_parameter.name] = table_parameter
             required = True
-            for c in table_parameter.constraints:
-                if c.name.value == "nullable" or c.name.value == "default":
-                    required = False
-                if c.name.value == "primary_key":
-                    primary_key_fields.add(table_parameter.id)
-                    cached_primary_key_fields.add(table_parameter.id)
-                    for _c in table_parameter.constraints:
-                        # check if default constraint is present along side primary key so it can autogenerate a value.
-                        # this step is necessary because the primary key field is a required parameter regardless of whether default constraint or not.
-                        if _c.name.value == "default":
-                            if table_parameter.name not in entry:
-                                entry[table_parameter.name] = None
-                                cached_default_pk_fields[table_parameter.name] = None
-                            required = True
-                            break
+            primary_key_in_constraints = any(c.name.value == "primary_key" for c in table_parameter.constraints)
+            nullable_in_constraints = any(c.name.value == "nullable" for c in table_parameter.constraints)
+            default_in_constraints = any(c.name.value == "default" for c in table_parameter.constraints)
+
+            if nullable_in_constraints or default_in_constraints:
+                required = False
+            
+            if primary_key_in_constraints:
+                primary_key_fields.add(table_parameter.id)
+                cached_primary_key_fields.add(table_parameter.id)
+                if default_in_constraints and table_parameter.name not in entry:
+                    # check if default constraint is present along side primary key so it can autogenerate a value.
+                    # this step is necessary because the primary key field is a required parameter regardless of whether default constraint or not.
+                    entry[table_parameter.name] = None
+                    cached_default_pk_fields[table_parameter.name] = None
+                required = True
+
             if required:   
                 required_parameters.append(table_parameter)
                 cached_required_parameters.append(table_parameter)
@@ -212,6 +251,7 @@ def create_entry(table, entry, tracked_pks,
     try:
         
         tracked_changes = []
+
         if type(entry) != dict:
             raise Exception({"error": "Entry must be a dictionary"})
         
@@ -242,7 +282,12 @@ def create_entry(table, entry, tracked_pks,
 
 
         
-        t_changes, pending_unique_changes, v_entry_state = validate_create_update_entry_items(entry, parameters, e_list, table, primary_key_fields, tracked_pks, tracked_unique_values, tracked_fk_values, bulk)
+        t_changes, pending_unique_changes, v_entry_state = validate_create_update_entry_items(
+                                                                    entry, parameters, e_list, 
+                                                                    table, primary_key_fields, 
+                                                                    tracked_pks, tracked_unique_values, 
+                                                                    tracked_fk_values, bulk=bulk
+                                                            )
         tracked_changes.extend(t_changes)
         # after all the required parameters have been sorted
         # iterate over the remaining parameters and create an entry for them with null values and also ensure they do have nullable constraints on their respective fields (thus validating that non-nullable fields are indeed passed)
@@ -268,8 +313,9 @@ def create_entry(table, entry, tracked_pks,
         
 
     except Exception as e:
-        print(e)
-        
+        import traceback
+        print(e, 'err')
+        print(traceback.print_exc())
         for change in tracked_changes:
             db.session.expunge(change)
         error = e.args[0]
@@ -298,19 +344,21 @@ def update_entry(entry, table, e_list):
             raise Exception({"error": "Entry must be a dictionary"})
         
         parameters = {}
-        primary_key_fields = set() # needed to ensure users don't create the wrong primary key
+        primary_key_fields = set() 
         for table_parameter in table.table_parameters:
             parameters[table_parameter.name] = table_parameter
-            for c in table_parameter.constraints:
-                if c.name.value == "primary_key":
-                    primary_key_fields.add(table_parameter.id)
+
+            primary_key_in_constraints = any(c.name.value == "primary_key" for c in table_parameter.constraints)
+            if primary_key_in_constraints:
+                primary_key_fields.add(table_parameter.id)
         
         validate_create_update_entry_items(entry, parameters, e_list, table, primary_key_fields, update=True)      
 
         # extra iteration to check for date or datetime fields for update:
         for tbl_p in table.table_parameters:
             if tbl_p.data_type.name in ['date', 'datetime']:
-                if not tbl_p.default_value: # only update if the default value is empty.
+                default_in_constraint = any(c.name.value == "default" for c in tbl_p.constraints)
+                if not tbl_p.default_value and default_in_constraint: # only update if the default value is empty which means update on save
                     now = datetime_repr(str(datetime.datetime.now()), tbl_p.data_type.name)
                     for e in e_list.entries:
                         if e.tableparameter_id == tbl_p.id:
@@ -345,14 +393,23 @@ def update_entry(entry, table, e_list):
 
 
 
-def return_entry_data(page, size, offset, runningSize, runningOffset, data):
+def return_entry_data(page, size, offset, runningSize, runningOffset, total_items, data):
     if page:
         has_next = runningSize < 0
         has_prev = page > 1
         next_num = page + 1 if has_next else None
-        prev_num = (offset - runningOffset) / size if has_prev else None
-        total_data = len(data)
-        return {"data": data, "page": page, "has_next": has_next, "has_prev": has_prev, "next_page_num": next_num, "prev_page_num": prev_num, "total_entries": total_data}
+        prev_num = (offset - runningOffset) // size if has_prev else None
+        data_on_page = len(data)
+        total_pages = math.ceil(total_items / size)
+
+        return {
+            "data": data, "page": page, 
+            "has_next": has_next, "has_prev": has_prev,
+            "next_page_num": next_num, "prev_page_num": prev_num, 
+            "total_entries": total_items,
+            "entries_on_page": data_on_page,
+            "total_pages": total_pages
+        }
 
     return {"data": data}
 
@@ -395,18 +452,21 @@ def build_entry_filter(entrylist_array, data_type_map, args, filter_type="&"):
     tp_names = list(data_type_map.keys())
     valid_args = []
 
-    found_tp_names = set()
+    # found_tp_names = set() we'll come back to it
 
     for tp_name in tp_names:
         for tp_suffix in generate_suffixes(tp_name):
-            if tp_name not in found_tp_names and tp_suffix in args:
-                found_tp_names.add(tp_name) # filter out multiple suffixes for the same table parameter name
-                arg = {}
-                arg['tp_name'] = tp_name
-                arg["tp_suffix"] = tp_suffix
-                valid_args.append(arg)
+            # if tp_name not in found_tp_names and tp_suffix in args: we'll review this again
+            if tp_suffix in args:
+                # found_tp_names.add(tp_name) 
+                valid_args.append({"tp_name": tp_name, "tp_suffix": tp_suffix})
+
+    if len(valid_args) > 30:
+        raise Exception({"error": "To many filters"})
                 
     filtered_array = []
+    if not valid_args:
+        return filtered_array
     for entrylist in entrylist_array:
         filtered_in = query_filter(entrylist, valid_args, args, data_type_map, filter_type)
         if filtered_in:
@@ -430,7 +490,7 @@ def build_entry_ordering(entrylist_array, data_type_map, order_by):
         tp_order = order
         if order.startswith('-'):
             tp_order = order[1:]
-        if tp_order in order_by:
+        if tp_order in tp_names:
             valid_ordering.append(order)
 
     end = len(valid_ordering) - 1
@@ -449,7 +509,7 @@ def build_entry_ordering(entrylist_array, data_type_map, order_by):
         elif datatype == "boolean":
             return bool(value) if value is not None else False
         elif datatype == "date" or datatype == "datetime":
-            return datetime_parse(str(value), datatype) if value is not None else datetime.datetime.min
+            return datetime_parse(str(value), datatype) if value is not None else datetime.datetime.min if datatype == "datetime" else datetime.date.min
         else:
             return str(value).lower() if value is not None else ""
 
@@ -516,6 +576,8 @@ def list_entries(args, table):
             page = page if page > 0 else 1
             size = int(size)
             offset = (page - 1) * size
+            if size < 1 or size > 100:
+                return {"error": "size must be between 1 and 100"}
         except:
             return {"error": "page and size must be integers"}
     
@@ -529,12 +591,19 @@ def list_entries(args, table):
 
         paginated_entrylist, runningOffset, runningSize = paginate_entry(sorted_entrylist, page, size, offset)
 
+
+
     except Exception as e:
         print(e)
+        err = e.args[0]
+        if isinstance(err, dict)  and "error" in err:
+            return err
         return {"error": "Something went wrong"} 
     else:
         # return return_entry_data(page, size, offset, runningSize, runningOffset, data, list_cache_key, unfiltered)
-        return return_entry_data(page, size, offset, runningSize, runningOffset, paginated_entrylist)
+        total_items = len(filtered_entrylist)
+        
+        return return_entry_data(page, size, offset, runningSize, runningOffset, total_items, paginated_entrylist)
 
 
 

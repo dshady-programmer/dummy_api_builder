@@ -16,7 +16,7 @@ import keyword
 import uuid
 import secrets
 from .parsers import datetime_repr
-
+import math
 
 
 def autogenerate_keys(tb_param):
@@ -87,7 +87,7 @@ def validate_name(name, tableparameter_field=False):
 
 
 def validate_entry_value(value, data_type):
-    if not value:
+    if value is None or not str(value):
         return False
     value = str(value)
     if data_type == "integer":
@@ -95,6 +95,16 @@ def validate_entry_value(value, data_type):
             eval_value = literal_eval(value)
             assert(type(eval_value) == int)
         except:
+            return False
+        if not math.isfinite(eval_value): # rejects 'nan', 'inf'
+            return False
+    elif data_type == "decimal": # validate.py, validate_entry_value
+        try:
+            eval_value = literal_eval(value)
+            assert(type(eval_value) == float)
+        except:
+            return False
+        if not math.isfinite(eval_value): # rejects 'nan', 'inf'
             return False
     elif data_type == "boolean":
         try:
@@ -129,7 +139,7 @@ def validate_entry_constraints(value, tbl_p, tracked_unique_values, tracked_fk_v
     fk = None
     default_value = None
     consts = [const.name.value for const in tbl_p.constraints]
-    condition = (type(value) == str and not value) or (type(value) != bool and not value)
+    condition = value is None or (isinstance(value, str) and not value.strip())
     for c in ["default", "nullable"]:
         if c in consts:
             if condition and c == "default":
@@ -139,8 +149,12 @@ def validate_entry_constraints(value, tbl_p, tracked_unique_values, tracked_fk_v
                     default_value = autogenerate_keys(tbl_p)
                 elif "foreign_key" in consts:
                     # value = tbl_p.default_value # we need to ensure the default value exist.
-                    val = tbl_p.foreign_key_default_value.primary_key_value
                     fk = "default_fk"
+                    
+                    if tbl_p.foreign_key_default_value:
+                        val = tbl_p.foreign_key_default_value.primary_key_value
+                    else:
+                        return False, fk, "foreign key default value isn't set", default_value
                     if val:
                         default_value = str(val)
                     else:
@@ -163,22 +177,30 @@ def validate_entry_constraints(value, tbl_p, tracked_unique_values, tracked_fk_v
     if condition and not default_value:
         return False, "non-nullable", "Value can't be empty", default_value
 
-    value = str(value)
+
+    value = str(value) if value is not None else None
+
     if "foreign_key" in consts:
-        value = default_value
+
+        if not value and fk == 'default_fk' and default_value is not None:
+            fk_value = default_value
+        else:
+            fk_value = value
 
         if not fk:
             fk = "fk"
 
-        if value in tracked_fk_values["values"]:
+        if fk_value in tracked_fk_values["values"]:
             return True, fk, None, default_value
         
         get_ref_table = tbl_p.foreign_key_reference_table
       
         if not get_ref_table:
             return False, fk, "No Reference table", default_value
-        if fk == "fk":
+        
+        if fk == "fk" or value: # could be default but still get value passed.. this should override
             # validate input field
+
             e_li = db.session.scalar(
                     db.select(EntryList).filter_by(table_id=get_ref_table.table_id, primary_key_value = value)
                 )
@@ -186,10 +208,10 @@ def validate_entry_constraints(value, tbl_p, tracked_unique_values, tracked_fk_v
             # default fk would be valid as far as there's a value
             if not default_value:
                 return False, fk, "Foreign key default value is empty.", default_value
-                # raise({"error": "Foreign key default value is empty."})
+
             e_li = tbl_p.foreign_key_default_value
         if not e_li:
-            return False, fk, f"Primary key '{value}' referenced for the foreign key doesn't exist on the parent table", default_value
+            return False, fk, f"Primary key '{fk_value}' referenced for the foreign key doesn't exist on the parent table", default_value
 
         tracked_fk_values["values"][value] = e_li
     if "unique" in consts:
@@ -220,13 +242,13 @@ def unique_constraints_validator(table_param, nullable=False):
     existing_values = set() # take advantage of the set data type for average 0(1) lookup
     for entry in entries:
  
-        condition = (entry.value and entry.value in existing_values)
+        condition = (entry.value is not None and entry.value in existing_values)
 
         if condition:
             raise Exception({"error": "Failed unique constraints, more than one row with the same value"})
-        elif nullable and not entry.value:
+        elif nullable and entry.value is None:
             continue
-        elif not nullable and not entry.value:
+        elif not nullable and entry.value is None:
             raise Exception({"error": "Found null values for a non-nullable column."})
         existing_values.add(entry.value)
     
@@ -247,14 +269,14 @@ def foreign_key_constraints_validator(parent_table, table_param, nullable=False)
 
     for entry in entries:
         # first check the entries are valid primary key values on the parent table
-        condition = (entry.value and entry.value not in validated_keys)
+        condition = (entry.value is not None and entry.value not in validated_keys)
         if condition:
 
             if entry.value not in e_list_pks:
                 raise Exception({"error": "Failed foreign key constraints, one or more rows does not reference a valid pk value on the parent table "})
-        elif nullable and not entry.value:
+        elif nullable and entry.value is None:
             continue
-        elif not nullable and not entry.value:
+        elif not nullable and entry.value is None:
             raise Exception({"error": "Found null values for a non-nullable column"})
 
         if validated_keys.get(entry.value):
@@ -277,12 +299,13 @@ def foreign_key_constraints_validator(parent_table, table_param, nullable=False)
                     relationship.entrylists.append(e_list)
             validated_keys.pop(relationship.entry_ref_pk)
 
-        for entry_value in validated_keys:
-            e_lists = validated_keys[entry_value]
-            for e_list in e_lists:
-                n_relationship = Relationship(entry_ref_pk=entry_value, foreign_key_rel_id=parent_table.reference.id, child_table_id=table_param.table_id)
-                n_relationship.entrylists.append(e_list)
-                db.session.add(n_relationship)
+        for entry_value, e_lists in validated_keys.items:
+            
+            rel = Relationship(entry_ref_pk=entry_value, foreign_key_rel_id=parent_table.reference.id,
+                                child_table_id=table_param.table_id)
+            rel.entrylists.extend(e_lists)
+            db.session.add(rel)
+
     except:
         raise Exception({"error": "Could not reference the foreign key id while getting/creating relationship"})
 
@@ -290,23 +313,23 @@ def foreign_key_constraints_validator(parent_table, table_param, nullable=False)
 
 def foreign_key_ref_table_validator(table_param, param_dt, param, user, validated_fks, entry_present):
     
-
+    run_validator = False
     if not validate_foreign_key_dType(param_dt): # since foreign key would always reference a primary key from the parent table.. it should conform with the valid pk data types(excluding integers)
         # you can use a foreign with the data type string or text. It doesn't have to tie strictly to the parent table primary key field datatype
         # int is excluding because if the parent table type is a string (uuid for example) and the child table is set to be an int data type
                 # then there's no way a uuid string would ever be coerced to an integer
         raise Exception({"error": "Foreign key data type must be either text or string"})
     table_param.dataType_length = None # no restriction to the maximum length to avoid any complications
-    fk_rf = param.get("foreign_key_rf") #expected format(api.table)
+    fk_ref = param.get("foreign_key_rf") #expected format(api.table)
 
 
 
     vfk = validated_fks["key_refs"].get(fk_ref, None) # check already validated foreign keys before blindly proceeding.
 
     if not vfk:
-        if not fk_rf:
+        if not fk_ref:
             raise Exception({"error": "Expected a foreign key reference field."})
-        f_api, f_table = fk_rf.split(".", 1) # Check if the reference api and model are valid for it to be a foreign key field
+        f_api, f_table = fk_ref.split(".", 1) # Check if the reference api and model are valid for it to be a foreign key field
         r_api = db.session.scalar(db.select(Api).filter_by(name=f_api, user_id=user.id))
         if not r_api:
             raise Exception({"error": "Api name referenced in the foreign key doesn't exist"})
@@ -317,16 +340,19 @@ def foreign_key_ref_table_validator(table_param, param_dt, param, user, validate
 
         fk_ref_id = foreign_key_ref_table.id
 
-        if entry_present:
-            # This is an update, check the previous foreign key ref id is the same as the current one
-            # else raise an error
-            if table_param.foreign_key_reference_id != fk_ref_id:
-                raise Exception({"error": "Foreign key reference id can't be changed once there's data on the table."})
-        validated_fks["key_refs"][fk_ref] = foreign_key_ref_table
+        validated_fks["key_refs"][fk_ref] = {"fk_ref_table": foreign_key_ref_table, "r_table": r_table}
     else:
-        fk_ref_id = vfk.id
+        fk_ref_id = vfk['fk_ref_table'].id
+        r_table = vfk['r_table']
+
+
+    if entry_present and table_param.foreign_key_reference_id != fk_ref_id:
+        # This is an update, check the previous foreign key ref id is the same as the current one
+        # else revalidate the entire entries on the table.
+        run_validator = True
     table_param.foreign_key_reference_id = fk_ref_id
-    return r_table
+    # print("table param", table_param, run_validator, fk_ref, fk_ref_id)
+    return r_table, run_validator
 
 
 
@@ -377,7 +403,7 @@ def validate_foreign_key_default_value(
  
 
     if not is_default:
-        return
+        return None
 
     key = f"{parent_table.id}-{default_value}"
     if not validated_fks["default_value_refs"].get(key):
