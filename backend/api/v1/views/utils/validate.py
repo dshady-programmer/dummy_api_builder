@@ -19,7 +19,7 @@ from .parsers import datetime_repr
 import math
 
 
-def autogenerate_keys(tb_param):
+def autogenerate_keys(tb_param, tracked_pks, bulk=False):
     datatype = tb_param.data_type.name 
     value = None
 
@@ -32,9 +32,15 @@ def autogenerate_keys(tb_param):
             value = secrets.randbelow(200000001)
             if value < lowest_value:
                 continue
-        e = Entry.query.filter_by(tableparameter_id=tb_param.id, value=value).first()
-        if not e:
+        if bulk and value not in tracked_pks:
             break
+
+        elif not bulk:
+            e = db.session.scalar(
+                db.select(db.exists().where(Entry.tableparameter_id == tb_param.id, Entry.value == value))
+            )
+            if not e:
+                break
 
     return value
 
@@ -82,7 +88,10 @@ def validate_name(name, tableparameter_field=False):
         return False
     if type(name) != str or (not tableparameter_field and len(name) < 3):
         return False
-    return name.isidentifier() and not keyword.iskeyword(name)
+
+    if (len(name) > 50):
+        return False
+    return name.isidentifier() and name.isascii() and not keyword.iskeyword(name)
 
 
 
@@ -135,7 +144,7 @@ def validate_entry_value_length(value, type, length):
     return True
 
 
-def validate_entry_constraints(value, tbl_p, tracked_unique_values, tracked_fk_values):
+def validate_entry_constraints(value, tbl_p, tracked_unique_values, tracked_fk_values, tracked_pks, bulk=False):
     fk = None
     default_value = None
     consts = [const.name.value for const in tbl_p.constraints]
@@ -146,7 +155,7 @@ def validate_entry_constraints(value, tbl_p, tracked_unique_values, tracked_fk_v
 
                 if tbl_p.primary_key:
                     # auto generate keys for primary keys
-                    default_value = autogenerate_keys(tbl_p)
+                    default_value = autogenerate_keys(tbl_p, tracked_pks, bulk)
                 elif "foreign_key" in consts:
                     # value = tbl_p.default_value # we need to ensure the default value exist.
                     fk = "default_fk"

@@ -26,7 +26,7 @@ class User(db.Model):
 
     """
     id = db.Column(db.Integer, primary_key=True)
-    public_id = db.Column(db.String(64), unique=True, nullable=True)
+    public_id = db.Column(db.String(255), unique=True, nullable=True)
     last_public_id_created = db.Column(db.DateTime, nullable=True)
     email = db.Column(db.String(100), unique=True, nullable=False)
     api_token = db.Column(db.String(255), unique=True)

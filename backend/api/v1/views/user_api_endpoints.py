@@ -17,6 +17,7 @@ from .utils.cache_utils import (
 from .utils.resource_delete_utils import delete_API
 from sqlalchemy.orm import selectinload
 from .utils.exceptions import exception_handler
+from .utils.parsers import html_clean_value
 
 @app_views.route('/my_apis')
 @exception_handler
@@ -93,6 +94,9 @@ def create_new_api(user):
     description = data.get('description')
     if not name:
         return format_response(status="error", message="name of the api must be provided", code=400)
+
+    name = str(name).strip().capitalize()
+
     stmt = db.select(db.exists().where(Api.name == name, Api.user_id == user.id))
     if db.session.scalar(stmt):
         return format_response(status="error", message="name with api already exists for this user", code=400)
@@ -107,7 +111,7 @@ def create_new_api(user):
     # delete_cache(key)
     db.session.commit()
 
-    db.session.rollback()
+    # db.session.rollback()
     return format_response(data={"id": new_api.id, "name": new_api.name, "desc": new_api.description})
 
 
@@ -125,6 +129,7 @@ def update_api_info(user, id):
         return format_response(status="error", message=f"api with id {id} doesn't exist", code=400)
 
     # add a check to update all relationships
+    name = str(name).strip().capitalize() if name is not None else None
     if name and validate_name(name):
         api.name = name
     if description:
@@ -135,7 +140,7 @@ def update_api_info(user, id):
     
     db.session.commit()
     
-    db.session.rollback()
+    # db.session.rollback()
     
     return format_response(data={"id": api.id, "name": api.name, "desc": api.description})
 
@@ -147,6 +152,7 @@ def delete_api(user, id):
     stmt = db.select(Api).filter_by(id=id, user_id=user.id).options(selectinload(Api.tables).joinedload(Table.reference)).with_for_update()
     api = db.session.scalar(stmt)
     if not api:
+        db.session.rollback()
         return format_response(status="error", message=f"api with id {id} doesn't exist", code=400)
   
 
@@ -154,7 +160,6 @@ def delete_api(user, id):
     status, msg, code = delete_API(db, api, user)
 
     if not status:
-        db.session.rollback()
         return format_response(status="error", message=msg, code=code)
 
     # list_key = f"{user_cache_namespace(user.id)}:apis"

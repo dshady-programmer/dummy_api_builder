@@ -69,6 +69,7 @@ def add_list_entry(api_token, api_name, model_name):
     table_stmt = table_stmt_post if request.method == 'POST' else table_stmt_get
     table = db.session.scalar(table_stmt)
     if not table:
+        db.session.rollback()
         return format_response(status="error", message=f"model {model_name} doesn't exist in the api", code=400)
 
     # list_cache_key_format = "{api_token}-{api_name}-{model_name}-entries"
@@ -137,6 +138,16 @@ def add_list_entry(api_token, api_name, model_name):
         else:
             responses = []
             errors = []
+
+            # update tracked_pks with existing primary keys in the table
+
+            existing_pks = db.session.scalars(
+                db.select(EntryList.primary_key_value).where(EntryList.table_id == table.id)
+            ).all()
+
+
+            tracked_pks.update(existing_pks) 
+
             if len(entries) > remaining_rows:
                 entries = entries[:remaining_rows]
             for entry in entries:
@@ -160,12 +171,12 @@ def add_list_entry(api_token, api_name, model_name):
                 else:
                     responses.append(response)
 
-            # for bulk write check that any of the primary keys do not exist in the database.
-            pk_exist_stmt = db.select(db.exists().where(EntryList.table_id==table.id, EntryList.primary_key_value.in_(tracked_pks)))
-            pk_exist = db.session.scalar(pk_exist_stmt)
-            if pk_exist:
-                db.session.rollback() # all or nothing here
-                return format_response(status="error", message="Integrity Error: One of the primary keys already exist in the database", code=409)
+            # # for bulk write check that any of the primary keys do not exist in the database.
+            # pk_exist_stmt = db.select(db.exists().where(EntryList.table_id==table.id, EntryList.primary_key_value.in_(tracked_pks)))
+            # pk_exist = db.session.scalar(pk_exist_stmt)
+            # if pk_exist:
+            #     db.session.rollback() # all or nothing here
+            #     return format_response(status="error", message="Integrity Error: One of the primary keys already exist in the database", code=409)
 
 
 
@@ -242,6 +253,7 @@ def update_delete_retrieve_entry(api_token, api_name, model_name, model_id):
     table_stmt = table_stmt_put if request.method == "PUT" else table_stmt_default.with_for_update(of=Table) if request.method == "DELETE" else table_stmt_default
     table = db.session.scalar(table_stmt)
     if not table:
+        db.session.rollback()
         return format_response(status="error", message=f"model {model_name} doesn't exist in the api", code=400)
 
     e_list_stmt = db.select(EntryList)\
@@ -250,6 +262,7 @@ def update_delete_retrieve_entry(api_token, api_name, model_name, model_id):
     e_list_stmt = e_list_stmt.with_for_update() if request.method in ['PUT', 'DELETE'] else e_list_stmt
     e_list = db.session.scalar(e_list_stmt)
     if not e_list:
+        db.session.rollback()
         return format_response(status="error", message="primary key value doesn't match any", code=400)
     # child_tables = []
     
@@ -260,20 +273,19 @@ def update_delete_retrieve_entry(api_token, api_name, model_name, model_id):
         data = request.get_json()
         entries = data.get("entries") or {}
         if type(entries) != dict:
+            db.session.rollback()
             return format_response(status="error", message="Entries must be an object", code=400)
 
-        try:
 
-            response = update_entry(entries, table, e_list)
-            if "error" in response:
-                return format_response(status="error", message=response["error"], code=400)
-            # rels = Relationship.query.filter_by(entry_ref_pk=e_list.primary_key_value, foreign_key_rel_id=fk_ref_table.id)
-            # for r in rels:
-            #     child_tables.append(r.child_table)   
-            # invalidate_user_cache_api(cache_key, api.id, table.name, child_tables)
-            return format_response(data=response)
-        except Exception as e:
-            return format_response(status="error", message="Database Integrity Error", code=409)
+        response = update_entry(entries, table, e_list)
+        if "error" in response:
+            return format_response(status="error", message=response["error"], code=400)
+        # rels = Relationship.query.filter_by(entry_ref_pk=e_list.primary_key_value, foreign_key_rel_id=fk_ref_table.id)
+        # for r in rels:
+        #     child_tables.append(r.child_table)   
+        # invalidate_user_cache_api(cache_key, api.id, table.name, child_tables)
+        return format_response(data=response)
+
 
         
 
@@ -284,7 +296,7 @@ def update_delete_retrieve_entry(api_token, api_name, model_name, model_id):
             return format_response(code=code, message="Entry succesfully deleted")
 
         else:
-            db.session.rollback()
+            
             return format_response(status="error", message=msg, code=code)
 
     if request.method == "GET":
@@ -292,39 +304,37 @@ def update_delete_retrieve_entry(api_token, api_name, model_name, model_id):
         # if cached_data is not None:
         #     # print(cached_data)
         #     return jsonify(cached_data)
-        try:
-            data = {}
+  
+        data = {}
 
-            detail = {}
-            for data_entry in e_list.entries:
-                fieldName = data_entry.tableparameter.name
-                detail[fieldName] = parse_value(data_entry.tableparameter, data_entry.value)
-            # rel_key = db.session(Relationship).filter(Relationship.fk_rel.like(f"{tableKeyName}%"), Relationship.entry_ref_pk=e_list.primary_key_value).first()
-            data['detail'] = detail
+        detail = {}
+        for data_entry in e_list.entries:
+            fieldName = data_entry.tableparameter.name
+            detail[fieldName] = parse_value(data_entry.tableparameter, data_entry.value)
+        # rel_key = db.session(Relationship).filter(Relationship.fk_rel.like(f"{tableKeyName}%"), Relationship.entry_ref_pk=e_list.primary_key_value).first()
+        data['detail'] = detail
 
 
-            rel_stmt = db.select(Relationship).filter_by(
-                entry_ref_pk=e_list.primary_key_value, 
-                foreign_key_rel_id=fk_ref_table.id)\
-                .options(
-                    selectinload(Relationship.entrylists).selectinload(EntryList.entries).joinedload(Entry.tableparameter), 
-                    joinedload(Relationship.child_table).joinedload(Table.api)
-                )
-            rels = db.session.scalars(rel_stmt).all()
-            rel_key_data = {} # format {"post_set":[..]}
+        rel_stmt = db.select(Relationship).filter_by(
+            entry_ref_pk=e_list.primary_key_value, 
+            foreign_key_rel_id=fk_ref_table.id)\
+            .options(
+                selectinload(Relationship.entrylists).selectinload(EntryList.entries).joinedload(Entry.tableparameter), 
+                joinedload(Relationship.child_table).joinedload(Table.api)
+            )
+        rels = db.session.scalars(rel_stmt).all()
+        rel_key_data = {} # format {"post_set":[..]}
+    
+
         
+        for rel in rels:
+            # child_tables.append(rel.child_table)
+            fk_rel_name = f"{rel.child_table.api.name.lower()}_{rel.child_table.name.lower()}_set"
+            rel_key_data[fk_rel_name] = []
+            for e_list_rel in rel.entrylists:
+                rel_data = {ent.tableparameter.name: parse_value(ent.tableparameter, ent.value) for ent in e_list_rel.entries}
+                rel_key_data[fk_rel_name].append(rel_data) # <api_name>_<model_name>s
+        data["relationships"] = rel_key_data
 
-            
-            for rel in rels:
-                # child_tables.append(rel.child_table)
-                fk_rel_name = f"{rel.child_table.api.name.lower()}_{rel.child_table.name.lower()}_set"
-                rel_key_data[fk_rel_name] = []
-                for e_list_rel in rel.entrylists:
-                    rel_data = {ent.tableparameter.name: parse_value(ent.tableparameter, ent.value) for ent in e_list_rel.entries}
-                    rel_key_data[fk_rel_name].append(rel_data) # <api_name>_<model_name>s
-            data["relationships"] = rel_key_data
-
-            # set_user_api_cache(cache_key, data, api.id, table.name, child_tables)
-            return format_response(data=data)
-        except Exception as e:
-            return format_response(status="error", message="Internal error", code=500)
+        # set_user_api_cache(cache_key, data, api.id, table.name, child_tables)
+        return format_response(data=data)

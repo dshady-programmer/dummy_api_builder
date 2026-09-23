@@ -104,9 +104,9 @@ def validate_create_update_entry_items(
             
 
         if type(entry_value) == str:
-            entry_value = html_clean_value(entry_values.strip()) # clean html value to avoid xss attacks with the exception of None values which is acceptable
+            entry_value = html_clean_value(entry_value.strip()) # clean html value to avoid xss attacks with the exception of None values which is acceptable
 
-        stat, const_type, err_msg, default_return_value = validate_entry_constraints(entry_value, tbl_p, tracked_unique_values, tracked_fk_values) # Validating the entry against the existing constraint
+        stat, const_type, err_msg, default_return_value = validate_entry_constraints(entry_value, tbl_p, tracked_unique_values, tracked_fk_values, tracked_pks, bulk) # Validating the entry against the existing constraint
         if const_type == "default" and stat:
             entry_value = default_return_value # set default value
         elif const_type == "nullable" and stat:
@@ -174,14 +174,14 @@ def validate_create_update_entry_items(
         # check if primary key already exists
 
 
-        if primary_key_value != e_list.primary_key_value and primary_key_value in tracked_pks or (not bulk and db.session.scalar(
-                db.select(EntryList).filter_by(table_id=table.id, primary_key_value=primary_key_value)
-            )): # for bulk write do the pk db check after, querying the database for each iteration can be expensive. O(n) network calls.
+        if primary_key_value != e_list.primary_key_value and (primary_key_value in tracked_pks or (not bulk and db.session.scalar(
+                db.select(db.exists().where(EntryList.table_id == table.id, EntryList.primary_key_value == primary_key_value))
+            ))): # for bulk write do the pk db check after, querying the database for each iteration can be expensive. O(n) network calls.
             raise Exception({"error": "Primary key already exist"})
         
         # Check if this primary key is already associated with a relationship
        
-        if update:
+        if update and primary_key_value != e_list.primary_key_value:
 
             is_referenced = db.session.scalar(
                 db.select(db.exists().where(Entry.fk_entry_list_id == e_list.id))
@@ -294,7 +294,7 @@ def create_entry(table, entry, tracked_pks,
         for tb_param_name, tb_param  in parameters.items():
             tbl_constraints = [c.name.value for c in tb_param.constraints]
             if "nullable" in tbl_constraints or "default" in tbl_constraints:
-                stat, const_type, err_msg, default_return_value = validate_entry_constraints(None, tb_param, tracked_unique_values, tracked_fk_values)
+                stat, const_type, err_msg, default_return_value = validate_entry_constraints(None, tb_param, tracked_unique_values, tracked_fk_values, tracked_pks, bulk)
                 if "default" in tbl_constraints:
                     if const_type == "default_fk":
                         rel = validate_create_fk_relationships(tb_param, default_return_value, tracked_fk_values, e_list, stat, err_msg)
@@ -452,6 +452,7 @@ def build_entry_filter(entrylist_array, data_type_map, args, filter_type="&"):
     tp_names = list(data_type_map.keys())
     valid_args = []
 
+    # print('filter_type', filter_type)
     # found_tp_names = set() we'll come back to it
 
     for tp_name in tp_names:

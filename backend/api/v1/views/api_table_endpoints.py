@@ -23,6 +23,7 @@ from .utils.cache_utils import (
 
 )
 from .utils.exceptions import exception_handler
+from .utils.parsers import html_clean_value
 
 """
 We won't be implementing a table/model list endpoint
@@ -53,19 +54,24 @@ def create_model(user, api_id):
     api_stmt = db.select(Api).filter_by(id=api_id, user_id=user.id).with_for_update()
     api = db.session.scalar(api_stmt)
     if not api:
+        db.session.rollback()
         return format_response(status="error", message="no api of such is associated with the user", code=400)
+
+    name = str(name).strip().capitalize()
 
     table_stmt = db.select(db.exists().where(Table.api_id == api_id, Table.name == name))
     table = db.session.scalar(table_stmt)
     if table:
+        db.session.rollback()
         return format_response(status="error", message="Table already exists", code=400)
 
     tables_count = db.session.scalar(db.select(UserLimit.current_tables).where(UserLimit.user_id==user.id))
     if tables_count >= MAX_TABLE_FOR_USER:
+        db.session.rollback()
         return format_response(status="error", message="Maximum number of allowable tables reached. Delete existing tables to create a new one", code=403)
 
-    
     if not validate_name(name):
+        db.session.rollback()
         return format_response(status="error", message="Table name must be a valid python identifier, not a python keyword and must be atleast 3 letters", code=400)
     new_table = Table(name=name, description=description, api_id=api_id)
     db.session.add(new_table)
@@ -112,6 +118,7 @@ def update_model(user, api_id, model_id):
     table = db.session.scalar(table_stmt)
 
     if not table:
+        db.session.rollback()
         return format_response(status="error", message="Table doesn't exist", code=400)
 
     entry_count = db.session.scalar(
@@ -122,7 +129,10 @@ def update_model(user, api_id, model_id):
     if entry_count:
         entry_present = True
     if type(table_parameters) != list:
+        db.session.rollback()
         return format_response(status="error", message="table_parameter must be a list", code=400)
+
+    name = str(name).strip().capitalize()
     if name and validate_name(name) and table.name != name:
         table.name = name
         # should_invalidate_api_detail = True
@@ -132,10 +142,14 @@ def update_model(user, api_id, model_id):
         # should_invalidate_api_detail = True
 
 
-    response = parse_and_update_tableparameters(table_parameters, table, user, entry_present)
-    if 'error' in response:
-        return format_response(status="error", message=response['error'], code=400)
+    if table_parameters:
+        response = parse_and_update_tableparameters(table_parameters, table, user, entry_present)
+        if 'error' in response:
+            return format_response(status="error", message=response['error'], code=400)
 
+    else:
+        db.session.commit()
+        response = {"id": table.id, "name": table.name, "desc": table.description}
     # table_cache_key = f"{api_cache_namespace(user.id, api_id)}:model:{table.id}"
     # if should_invalidate_api_detail:
     #     api_cache_key = f"{api_cache_namespace(user.id, api_id)}:detail"
@@ -242,12 +256,14 @@ def delete_model(user, api_id, model_id):
     api_stmt = db.select(Api).where(Api.id == api_id, Api.user_id == user.id).with_for_update()
     api = db.session.scalar(api_stmt)
     if not api:
+        db.session.rollback()
         return format_response(status="error", message="no api of such is associated with the user", code=404)
 
     table_stmt = db.select(Table).filter_by(id=model_id, api_id=api_id).options(joinedload(Table.reference)).with_for_update()
 
     t = db.session.scalar(table_stmt)
     if not t:
+        db.session.rollback()
         return format_response(status="error", message= "Table doesn't exist", code=404)
 
 
@@ -255,7 +271,6 @@ def delete_model(user, api_id, model_id):
     # delete table but with a check on relationships
     status, msg, code = delete_table(db, t, user)
     if not status:
-        db.session.rollback()
         return format_response(status="error", message=msg, code=code)
 
     
@@ -277,11 +292,13 @@ def truncate_model(user, api_id, model_id):
     api_stmt = db.select(Api).where(Api.id == api_id, Api.user_id == user.id).with_for_update()
     api = db.session.scalar(api_stmt)
     if not api:
+        db.session.rollback()
         return format_response(status="error", message="no api of such is associated with the user", code=404)
   
     table_stmt = db.select(Table).filter_by(id=model_id, api_id=api_id).options(joinedload(Table.reference)).with_for_update()
     t = db.session.scalar(table_stmt)
     if not t:
+        db.session.rollback()
         return format_response(status="error", message="Table doesn't exist", code=400)
 
 
@@ -291,7 +308,9 @@ def truncate_model(user, api_id, model_id):
         .with_for_update()
     ).all()
 
-
+    if not entrylists:
+        db.session.rollback()
+        return format_response(status="error", message="No entries to delete", code=400)
 
     status, msg, code = delete_entrylists(db, t.reference.id, entrylists, user)
 
@@ -301,7 +320,6 @@ def truncate_model(user, api_id, model_id):
 
         return format_response(code=code)
     else:
-        db.session.rollback()
         return format_response(status="error", message=msg, code=code)
 
 

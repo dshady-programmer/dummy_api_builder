@@ -117,6 +117,7 @@ def table_parameter_constraints_checks(
                 if param_dt not in ["date", "datetime"] and not is_default_value_valid:
                     raise Exception({"error": "Wrong data type passed for default value"})
                 elif param_dt in ["date", "datetime"]:
+                    param_default_value = param_default_value.strip().lower() if param_default_value else None
                     if param_default_value != "created" and not is_default_value_valid:
                         param_default_value = None
                     elif is_default_value_valid:

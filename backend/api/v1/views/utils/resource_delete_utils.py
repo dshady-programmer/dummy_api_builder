@@ -211,7 +211,6 @@ def delete_table(db, table, user):
                 table_row_count = db.session.scalar(
                     db.select(db.func.count(EntryList.id)).where(EntryList.table_id==table.id)
                 )
-
                 db.session.execute(
                     db.update(UserLimit).where(
                         UserLimit.user_id == user.id,
@@ -228,12 +227,15 @@ def delete_table(db, table, user):
 
             except Exception as e:
                 print(e)
+                db.session.rollback()
                 return False, "Database error", 400
 
         else:
+            db.session.rollback()
             return False, "A child table is protected", 422
     except Exception as e:
         print(e)
+        db.session.rollback()
         return False, "An error occured", 400
 
 
@@ -270,6 +272,7 @@ def delete_API(db, api, user):
                         EntryList.table_id.in_(table_ids)
                     )   
                 )
+      
                 db.session.execute(
                     db.update(UserLimit).where(
                         UserLimit.user_id == user.id,
@@ -287,13 +290,16 @@ def delete_API(db, api, user):
 
             except Exception as e:
                 print(e)
+                db.session.rollback()
                 return False, "Database error", 400
 
         else:
+            db.session.rollback()
             return False, "A child table on one of the tables in this api is protected", 422
 
     except Exception as e:
         print(e)
+        db.session.rollback()
         return False, "An error occured", 400
 
 def delete_entrylists(db, fk_ref_table_id, entrylists, user):
@@ -329,14 +335,18 @@ def delete_entrylists(db, fk_ref_table_id, entrylists, user):
                 return True, None, 204
             except Exception as e:
                 print(e)
+                db.session.rollback()
                 return False, "Database error", 400
         else:
+            db.session.rollback()
             return False, "Protected child rows are present and can't be deleted", 422
         
     except RecursionError as e:
+        db.session.rollback()
         return False, str(e), 409
     except Exception as e:
         print(e)
+        db.session.rollback()
         error = e.args[0]
         if type(error) == dict and "error" in error:
             return False, error["error"], 422
