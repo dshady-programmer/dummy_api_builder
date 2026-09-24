@@ -17,7 +17,7 @@ from .utils.cache_utils import (
 from .utils.resource_delete_utils import delete_API
 from sqlalchemy.orm import selectinload
 from .utils.exceptions import exception_handler
-from .utils.parsers import html_clean_value
+
 
 @app_views.route('/my_apis')
 @exception_handler

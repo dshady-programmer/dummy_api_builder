@@ -17,10 +17,11 @@ def exception_handler(func):
             db.session.rollback()            
             return format_response(status="error", message="Database integrity error occurred", code=400)
         except Exception as e:
+            
             print('errored out')
             print(str(e))
             # raise e
-            # print(traceback.print_exc())
+            print(traceback.print_exc())
             db.session.rollback()
             return format_response(status="error", message="An unexpected error occurred", code=500)
         

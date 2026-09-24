@@ -103,9 +103,11 @@ class TableParameter(db.Model):
     table = db.relationship('Table', back_populates='table_parameters')
     constraints = db.relationship('Constraint', secondary=parameter_constraints, backref='table_parameters')
     entries = db.relationship('Entry', back_populates='tableparameter', cascade="all, delete-orphan", passive_deletes=True)
+    sanitize_input = db.Column(db.Boolean, default=False)
 
     table_level_on_delete = db.Column(db.Enum(TableLevelOnDeleteOptions), default=TableLevelOnDeleteOptions.protect, nullable=False) # on delete behavior for the table level foreign key relationship. It can be either CASCADE, PROTECT.
     row_level_on_delete = db.Column(db.Enum(RowLevelOndeleteOptions), default=RowLevelOndeleteOptions.protect, nullable=False) # on delete behavior for the row level foreign key relationship. It can be either CASCADE, PROTECT or SET_NULL.
+
 
     __table_args__ = (
         db.UniqueConstraint('table_id', 'name', name='uq_tableparameter_table_id_name'),

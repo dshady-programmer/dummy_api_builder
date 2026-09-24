@@ -1,8 +1,8 @@
-"""empty message
+"""initialize migration
 
-Revision ID: df959e3624b2
+Revision ID: 33ba611466c9
 Revises: 
-Create Date: 2026-08-26 12:09:42.171657
+Create Date: 2026-09-24 08:16:05.681212
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = 'df959e3624b2'
+revision = '33ba611466c9'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -27,11 +27,11 @@ def upgrade():
     )
     op.create_table('user',
     sa.Column('id', sa.Integer(), nullable=False),
-    sa.Column('public_id', sa.String(length=64), nullable=True),
+    sa.Column('public_id', sa.String(length=255), nullable=True),
     sa.Column('last_public_id_created', sa.DateTime(), nullable=True),
     sa.Column('email', sa.String(length=100), nullable=False),
-    sa.Column('api_token', sa.String(length=100), nullable=True),
-    sa.Column('password', sa.String(length=100), nullable=False),
+    sa.Column('api_token', sa.String(length=255), nullable=True),
+    sa.Column('password', sa.String(length=255), nullable=False),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('api_token'),
     sa.UniqueConstraint('email'),
@@ -45,14 +45,23 @@ def upgrade():
     sa.Column('user_id', sa.Integer(), nullable=True),
     sa.ForeignKeyConstraint(['user_id'], ['user.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('user_id', 'id', name='uq_api_id_user_id'),
+    sa.UniqueConstraint('user_id', 'name', name='uq_api_name_user_id'),
     sqlite_autoincrement=True
     )
+    with op.batch_alter_table('api', schema=None) as batch_op:
+        batch_op.create_index('idx_api_id_user_id', ['id', 'user_id'], unique=False)
+        batch_op.create_index(batch_op.f('ix_api_user_id'), ['user_id'], unique=False)
+
     op.create_table('user_limit',
     sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
     sa.Column('user_id', sa.Integer(), nullable=False),
     sa.Column('current_rows', sa.Integer(), nullable=False),
-    sa.Column('max_rows', sa.Integer(), nullable=False),
-    sa.CheckConstraint('current_rows <= max_rows', name='check_current_rows_not_exceed_max_rows'),
+    sa.Column('current_tables', sa.Integer(), nullable=False),
+    sa.CheckConstraint('current_rows <= 2000', name='check_current_rows_not_exceed_max_rows'),
+    sa.CheckConstraint('current_rows >= 0', name='check_current_rows_not_negative'),
+    sa.CheckConstraint('current_tables <= 100', name='check_current_tables_not_exceed_max_tables'),
+    sa.CheckConstraint('current_tables >= 0', name='check_current_tables_not_negative'),
     sa.ForeignKeyConstraint(['user_id'], ['user.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('user_id'),
@@ -65,19 +74,28 @@ def upgrade():
     sa.Column('api_id', sa.Integer(), nullable=True),
     sa.ForeignKeyConstraint(['api_id'], ['api.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('api_id', 'id', name='uq_table_api_id_table_id'),
+    sa.UniqueConstraint('api_id', 'name', name='uq_table_api_id_table_name'),
     sqlite_autoincrement=True
     )
+    with op.batch_alter_table('table', schema=None) as batch_op:
+        batch_op.create_index(batch_op.f('ix_table_api_id'), ['api_id'], unique=False)
+
     op.create_table('entrylist',
     sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
     sa.Column('primary_key_value', sa.Text(), nullable=True),
     sa.Column('table_id', sa.Integer(), nullable=True),
     sa.ForeignKeyConstraint(['table_id'], ['table.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('table_id', 'primary_key_value', name='uq_entrylist_table_id_primary_key_value'),
     sqlite_autoincrement=True
     )
+    with op.batch_alter_table('entrylist', schema=None) as batch_op:
+        batch_op.create_index(batch_op.f('ix_entrylist_table_id'), ['table_id'], unique=False)
+
     op.create_table('foreignkeyfieldreferencetable',
     sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
-    sa.Column('table_id', sa.Integer(), nullable=True),
+    sa.Column('table_id', sa.Integer(), nullable=False),
     sa.ForeignKeyConstraint(['table_id'], ['table.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('table_id'),
@@ -91,9 +109,12 @@ def upgrade():
     sa.ForeignKeyConstraint(['child_table_id'], ['table.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['foreign_key_rel_id'], ['foreignkeyfieldreferencetable.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id'),
-    sa.UniqueConstraint('entry_ref_pk', 'foreign_key_rel_id', name='uq_relationship_entry_ref_pk_foreign_key_rel_id'),
+    sa.UniqueConstraint('entry_ref_pk', 'foreign_key_rel_id', 'child_table_id', name='uq_relationship_entry_ref_pk_foreign_key_rel_id'),
     sqlite_autoincrement=True
     )
+    with op.batch_alter_table('relationship', schema=None) as batch_op:
+        batch_op.create_index('idx_entry_ref_pk_foreign_key_rel_id', ['entry_ref_pk', 'foreign_key_rel_id'], unique=False)
+
     op.create_table('tableparameter',
     sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
     sa.Column('name', sa.String(), nullable=False),
@@ -102,24 +123,40 @@ def upgrade():
     sa.Column('foreign_key_reference_id', sa.Integer(), nullable=True),
     sa.Column('dataType_length', sa.Integer(), nullable=True),
     sa.Column('default_value', sa.Text(), nullable=True),
+    sa.Column('foreign_key_default_value_id', sa.Integer(), nullable=True),
     sa.Column('table_id', sa.Integer(), nullable=True),
+    sa.Column('sanitize_input', sa.Boolean(), nullable=True),
     sa.Column('table_level_on_delete', sa.Enum('cascade', 'protect', name='tablelevelondeleteoptions'), nullable=False),
     sa.Column('row_level_on_delete', sa.Enum('cascade', 'protect', 'set_null', name='rowlevelondeleteoptions'), nullable=False),
+    sa.ForeignKeyConstraint(['foreign_key_default_value_id'], ['entrylist.id'], ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['foreign_key_reference_id'], ['foreignkeyfieldreferencetable.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['table_id'], ['table.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('table_id', 'name', name='uq_tableparameter_table_id_name'),
     sqlite_autoincrement=True
     )
+    with op.batch_alter_table('tableparameter', schema=None) as batch_op:
+        batch_op.create_index(batch_op.f('ix_tableparameter_foreign_key_reference_id'), ['foreign_key_reference_id'], unique=False)
+        batch_op.create_index(batch_op.f('ix_tableparameter_table_id'), ['table_id'], unique=False)
+
     op.create_table('entry',
     sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
     sa.Column('value', sa.Text(), nullable=True),
     sa.Column('tableparameter_id', sa.Integer(), nullable=True),
     sa.Column('entry_list_id', sa.Integer(), nullable=True),
+    sa.Column('fk_entry_list_id', sa.Integer(), nullable=True),
+    sa.CheckConstraint('entry_list_id != fk_entry_list_id', name='check_fk_entry_list_id_not_same_as_entry_list_id'),
     sa.ForeignKeyConstraint(['entry_list_id'], ['entrylist.id'], ondelete='CASCADE'),
+    sa.ForeignKeyConstraint(['fk_entry_list_id'], ['entrylist.id'], ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['tableparameter_id'], ['tableparameter.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id'),
     sqlite_autoincrement=True
     )
+    with op.batch_alter_table('entry', schema=None) as batch_op:
+        batch_op.create_index(batch_op.f('ix_entry_entry_list_id'), ['entry_list_id'], unique=False)
+        batch_op.create_index(batch_op.f('ix_entry_fk_entry_list_id'), ['fk_entry_list_id'], unique=False)
+        batch_op.create_index(batch_op.f('ix_entry_tableparameter_id'), ['tableparameter_id'], unique=False)
+
     op.create_table('entrylist_relationships',
     sa.Column('relationship_id', sa.Integer(), nullable=True),
     sa.Column('entrylist_id', sa.Integer(), nullable=True),
@@ -141,13 +178,35 @@ def downgrade():
     # ### commands auto generated by Alembic - please adjust! ###
     op.drop_table('parameter_constraint')
     op.drop_table('entrylist_relationships')
+    with op.batch_alter_table('entry', schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f('ix_entry_tableparameter_id'))
+        batch_op.drop_index(batch_op.f('ix_entry_fk_entry_list_id'))
+        batch_op.drop_index(batch_op.f('ix_entry_entry_list_id'))
+
     op.drop_table('entry')
+    with op.batch_alter_table('tableparameter', schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f('ix_tableparameter_table_id'))
+        batch_op.drop_index(batch_op.f('ix_tableparameter_foreign_key_reference_id'))
+
     op.drop_table('tableparameter')
+    with op.batch_alter_table('relationship', schema=None) as batch_op:
+        batch_op.drop_index('idx_entry_ref_pk_foreign_key_rel_id')
+
     op.drop_table('relationship')
     op.drop_table('foreignkeyfieldreferencetable')
+    with op.batch_alter_table('entrylist', schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f('ix_entrylist_table_id'))
+
     op.drop_table('entrylist')
+    with op.batch_alter_table('table', schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f('ix_table_api_id'))
+
     op.drop_table('table')
     op.drop_table('user_limit')
+    with op.batch_alter_table('api', schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f('ix_api_user_id'))
+        batch_op.drop_index('idx_api_id_user_id')
+
     op.drop_table('api')
     op.drop_table('user')
     op.drop_table('constraint')

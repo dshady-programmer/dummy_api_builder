@@ -24,7 +24,7 @@ from .model_entry_utils import (
     create_default_value_entries, 
     update_default_value_entries
 )
-from .parsers import html_clean_value, datetime_repr
+from .parsers import datetime_repr
 
 
 from .cache_utils import delete_cache, api_cache_namespace
@@ -173,7 +173,7 @@ def check_and_validate_tableparameter(
     primary_key_present = False
     prev_constraints = None
     if param_default_value is not None:
-        param_default_value = html_clean_value(param_default_value)
+        param_default_value = param_default_value
         if param_dt == "boolean":
             param_default_value = param_default_value.capitalize() # ensure boolean values are capitalized 
     if update:
@@ -191,6 +191,10 @@ def check_and_validate_tableparameter(
         
     if update:
         table_param.constraints.clear()
+
+    sanitize_input = param.get("sanitize_input", None)
+    if sanitize_input and str(sanitize_input).lower() == "true":
+        table_param.sanitize_input = True
 
     for const in constraints:
         # There can be more than one constraints for a model field

@@ -104,7 +104,7 @@ def validate_create_update_entry_items(
             
 
         if type(entry_value) == str:
-            entry_value = html_clean_value(entry_value.strip()) # clean html value to avoid xss attacks with the exception of None values which is acceptable
+            entry_value = html_clean_value(entry_value.strip()) if tbl_p.sanitize_input else entry_value.strip() # clean html value to avoid xss attacks with the exception of None values which is acceptable
 
         stat, const_type, err_msg, default_return_value = validate_entry_constraints(entry_value, tbl_p, tracked_unique_values, tracked_fk_values, tracked_pks, bulk) # Validating the entry against the existing constraint
         if const_type == "default" and stat:
@@ -313,9 +313,9 @@ def create_entry(table, entry, tracked_pks,
         
 
     except Exception as e:
-        import traceback
+        # import traceback
         print(e, 'err')
-        print(traceback.print_exc())
+        # print(traceback.print_exc())
         for change in tracked_changes:
             db.session.expunge(change)
         error = e.args[0]

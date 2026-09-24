@@ -23,7 +23,7 @@ from .utils.cache_utils import (
 
 )
 from .utils.exceptions import exception_handler
-from .utils.parsers import html_clean_value
+
 
 """
 We won't be implementing a table/model list endpoint
