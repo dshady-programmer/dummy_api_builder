@@ -140,6 +140,7 @@ const Index = ({ fList, mParam, endpoint, title, btnTitle, method }) => {
                                                 <option value="datetime">Datetime</option>
                                             </select>
                                         </div>
+                              
                                         <div>
                                             <label htmlFor={`field-constraints-${field}`}>Field Constraints</label>
                                             <select name={`constraints-${field}`} id={`field-constraints-${field}`} onChange={handleChange} multiple>
@@ -149,6 +150,14 @@ const Index = ({ fList, mParam, endpoint, title, btnTitle, method }) => {
                                                 <option value="nullable" selected={currentTbl_params?.constraints?.includes("nullable") ? true : false}>Nullable</option>
                                                 <option value="default" selected={currentTbl_params?.constraints?.includes("default") ? true : false}>Default value</option>                  
                                             </select>
+                                        </div>
+                                        <div>
+                                            <label htmlFor={`field-sanitize-input-${field}`}>Sanitize Input</label>
+                                            <select id={`field-sanitize-input-${field}`} name={`sanitize_input-${field}`} defaultValue={"false"} value={currentTbl_params?.sanitize_input} onChange={handleChange}>
+                                                <option value="true">Yes</option>
+                                                <option value="false">No</option>
+                                            </select>
+
                                         </div>
                                         {
                                             currentTbl_params?.constraints?.includes("foreign_key") &&  (
@@ -206,6 +215,8 @@ const Index = ({ fList, mParam, endpoint, title, btnTitle, method }) => {
                                                             </li>
                                                         </ul>
                                                     </div>
+                                                    
+
                                                 </>
                                             )
                                         }
